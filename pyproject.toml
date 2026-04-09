@@ -22,10 +22,23 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Typing :: Typed",
 ]
+keywords = [
+    "ruijie",
+    "reyee",
+    "networking",
+    "cloud",
+    "network-management",
+]
 dependencies = [
     "httpx>=0.27,<1",
     "pydantic>=2.0,<3",
 ]
+
+[project.urls]
+Homepage = "https://github.com/dannielperez/pyruijie"
+Repository = "https://github.com/dannielperez/pyruijie"
+Documentation = "https://github.com/dannielperez/pyruijie#readme"
+Issues = "https://github.com/dannielperez/pyruijie/issues"
 
 [project.optional-dependencies]
 dev = [
