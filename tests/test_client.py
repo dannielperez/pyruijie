@@ -2,10 +2,9 @@
 
 import httpx
 import pytest
-import respx
 
 from pyruijie import RuijieClient
-from pyruijie.exceptions import APIError, AuthenticationError, ConnectionError
+from pyruijie.exceptions import APIError, AuthenticationError
 
 BASE_URL = "https://cloud-us.ruijienetworks.com"
 
