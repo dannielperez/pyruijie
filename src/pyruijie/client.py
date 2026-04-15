@@ -7,12 +7,13 @@ from typing import Any
 import httpx
 
 from pyruijie.exceptions import APIError, AuthenticationError, ConnectionError
-from pyruijie.models import Device, Project
+from pyruijie.models import ClientDevice, Device, Project
 
 DEFAULT_BASE_URL = "https://cloud-us.ruijienetworks.com"
 _AUTH_PATH = "/service/api/oauth20/client/access_token"
 _GROUPS_PATH = "/service/api/group/single/tree"
 _DEVICES_PATH = "/service/api/maint/devices"
+_CLIENTS_PATH = "/service/api/maint/clients"
 
 
 class RuijieClient:
@@ -133,6 +134,24 @@ class RuijieClient:
                 break
             page += 1
         return all_devices
+
+    def get_clients(self, project_id: str, *, per_page: int = 100) -> list[ClientDevice]:
+        """Return all connected client devices for a given project."""
+        all_clients: list[ClientDevice] = []
+        page = 1
+        while True:
+            data = self._get(
+                _CLIENTS_PATH,
+                {"group_id": project_id, "page": page, "per_page": per_page},
+            )
+            raw_clients = data.get("clientList", [])
+            if not raw_clients:
+                break
+            all_clients.extend(ClientDevice.model_validate(c) for c in raw_clients)
+            if len(raw_clients) < per_page:
+                break
+            page += 1
+        return all_clients
 
     # -- helpers ---------------------------------------------------------------
 

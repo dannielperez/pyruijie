@@ -35,6 +35,15 @@ with RuijieClient(app_id="...", app_secret="...") as client:
     projects = client.get_projects()
 ```
 
+### Connected Clients
+
+```python
+# List connected client devices (phones, laptops, IoT, etc.)
+clients = client.get_clients(projects[0].group_id)
+for c in clients:
+    print(f"  {c.mac} {c.ip} {c.hostname} via {c.connect_type}")
+```
+
 ## Error Handling
 
 ```python
