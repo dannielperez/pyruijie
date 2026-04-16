@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pyruijie"
-version = "0.1.0"
+version = "0.2.0"
 description = "Python client library for Ruijie/Reyee Cloud-managed networking"
 readme = "README.md"
 license = "Apache-2.0"
@@ -20,6 +20,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Typing :: Typed",
 ]
 keywords = [
@@ -38,6 +39,7 @@ dependencies = [
 Homepage = "https://github.com/dannielperez/pyruijie"
 Repository = "https://github.com/dannielperez/pyruijie"
 Documentation = "https://github.com/dannielperez/pyruijie#readme"
+Changelog = "https://github.com/dannielperez/pyruijie/blob/main/CHANGELOG.md"
 Issues = "https://github.com/dannielperez/pyruijie/issues"
 
 [project.optional-dependencies]
@@ -46,10 +48,15 @@ dev = [
     "respx>=0.22",
     "pytest-cov>=5.0",
     "ruff>=0.4",
+    "build>=1.0",
+    "twine>=5.0",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pyruijie"]
+
+[tool.hatch.build.targets.sdist]
+exclude = [".git", ".github", ".DS_Store", ".coverage", ".pytest_cache", ".ruff_cache"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -61,3 +68,6 @@ line-length = 99
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.format]
+quote-style = "double"
