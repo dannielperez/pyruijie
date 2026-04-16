@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
 
     steps:
       - uses: actions/checkout@v4
@@ -20,6 +20,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
 
       - name: Install package with dev dependencies
         run: pip install -e ".[dev]"
@@ -27,5 +28,43 @@ jobs:
       - name: Lint
         run: ruff check src/ tests/
 
+      - name: Format check
+        run: ruff format --check src/ tests/
+
       - name: Test
         run: pytest --cov=pyruijie --cov-report=term-missing
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: pip install build twine
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      - name: Verify distributions
+        run: twine check dist/*
+
+      - name: Verify py.typed is packaged
+        run: |
+          python -c "
+          import zipfile, sys
+          whl = next(f for f in __import__('pathlib').Path('dist').iterdir() if f.suffix == '.whl')
+          with zipfile.ZipFile(whl) as z:
+              names = z.namelist()
+              assert any('py.typed' in n for n in names), f'py.typed missing from {whl.name}: {names}'
+              print(f'✓ py.typed found in {whl.name}')
+          "
+
+      - name: Smoke test import
+        run: |
+          pip install dist/*.whl
+          python -c "import pyruijie; print(f'pyruijie {pyruijie.__version__} OK')"
