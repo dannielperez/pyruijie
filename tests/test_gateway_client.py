@@ -13,13 +13,13 @@ from pyruijie.exceptions import RuijieApiError, RuijieAuthError
 
 @pytest.fixture
 def client():
-    return GatewayClient("10.200.0.1", "admin", "password123")
+    return GatewayClient("192.168.1.1", "admin", "password123")
 
 
 class TestGatewayClientInit:
 
     def test_defaults(self, client: GatewayClient):
-        assert client.host == "10.200.0.1"
+        assert client.host == "192.168.1.1"
         assert client.username == "admin"
         assert client.sid is None
         assert client.serial_number is None
@@ -33,7 +33,7 @@ class TestGatewayClientLogin:
     def test_login_success(self, client: GatewayClient):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
-            "data": {"sid": "abc123", "sn": "H1T033400290C"}
+            "data": {"sid": "abc123", "sn": "SERN0000000001"}
         }
         mock_resp.raise_for_status = MagicMock()
 
@@ -42,7 +42,7 @@ class TestGatewayClientLogin:
 
         assert sid == "abc123"
         assert client.sid == "abc123"
-        assert client.serial_number == "H1T033400290C"
+        assert client.serial_number == "SERN0000000001"
 
     def test_login_failure_no_data(self, client: GatewayClient):
         mock_resp = MagicMock()

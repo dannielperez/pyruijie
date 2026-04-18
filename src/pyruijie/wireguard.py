@@ -107,7 +107,7 @@ class WireGuardManager:
 
     Usage::
 
-        gw = GatewayClient("10.200.0.1", "admin", "password")
+        gw = GatewayClient("192.168.1.1", "admin", "password")
         gw.login()
         wg = WireGuardManager(gw)
 
@@ -520,7 +520,7 @@ class WireGuardManager:
         """Allocate the next available IP in a network.
 
         Args:
-            network: CIDR network (e.g. "10.254.250.0/20").
+            network: CIDR network (e.g. "10.100.0.0/20").
             used_ips: Set of already-allocated IPs.
             preferred: Preferred IP to use if available.
             reserve_gateway: Skip .1 address (hub gateway).
@@ -600,7 +600,7 @@ class WireGuardManager:
             suffix: Optional extra suffix.
 
         Returns:
-            A policy name like "Caridad Pineiro GW".
+            A policy name like "Site Alpha GW".
         """
         parts = [site_name, role]
         if suffix:

@@ -30,7 +30,7 @@ class TestListServerPolicies:
     def test_get_server_policy_default(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
         policy = wg.get_server_policy()
-        assert policy.desc == "US_CentroCaguas_WG"
+        assert policy.desc == "HQ_MainOffice_WG"
 
     def test_get_server_policy_by_uuid(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
@@ -83,23 +83,23 @@ class TestListPeers:
         peers = wg.list_peers()
         assert len(peers) == 3
         descs = {p.desc for p in peers}
-        assert "laptop-Danny" in descs
-        assert "Caridad Pineiro" in descs
+        assert "laptop-user1" in descs
+        assert "Site Alpha" in descs
 
 
 class TestGetPeer:
 
     def test_by_ip(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
-        peer = wg.get_peer(ip="10.254.250.2")
+        peer = wg.get_peer(ip="10.100.0.2")
         assert peer is not None
-        assert peer.desc == "laptop-Danny"
+        assert peer.desc == "laptop-user1"
 
     def test_by_desc(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
-        peer = wg.get_peer(desc="Caridad Plaza del Carmen")
+        peer = wg.get_peer(desc="Site Beta")
         assert peer is not None
-        assert peer.ipaddr == "10.254.250.103"
+        assert peer.ipaddr == "10.100.0.103"
 
     def test_not_found(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
@@ -113,20 +113,20 @@ class TestAddPeer:
         peer = WireGuardPeer(
             uuid="new_uuid",
             desc="New Site",
-            ipaddr="10.254.250.200",
+            ipaddr="10.100.0.200",
             peer_pubkey="NEW_KEY==",
             preshared_key="NEW_PSK==",
         )
         policy = wg.add_peer(peer)
         assert len(policy.peers) == 4
-        assert any(p.ipaddr == "10.254.250.200" for p in policy.peers)
+        assert any(p.ipaddr == "10.100.0.200" for p in policy.peers)
 
     def test_conflict_ip(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
         peer = WireGuardPeer(
             uuid="dup_uuid",
             desc="Duplicate IP",
-            ipaddr="10.254.250.2",  # Already used by laptop-Danny
+            ipaddr="10.100.0.2",  # Already used by laptop-user1
             peer_pubkey="UNIQUE_KEY==",
         )
         with pytest.raises(RuijieWireGuardConflictError, match="IP"):
@@ -137,7 +137,7 @@ class TestAddPeer:
         peer = WireGuardPeer(
             uuid="dup_uuid",
             desc="Duplicate Key",
-            ipaddr="10.254.250.200",
+            ipaddr="10.100.0.200",
             peer_pubkey="FAKE_PUBKEY_DANNY==",  # Already used
         )
         with pytest.raises(RuijieWireGuardConflictError, match="public key"):
@@ -148,7 +148,7 @@ class TestAddPeer:
         peer = WireGuardPeer(
             uuid="",
             desc="No UUID",
-            ipaddr="10.254.250.200",
+            ipaddr="10.100.0.200",
             peer_pubkey="NO_UUID_KEY==",
         )
         policy = wg.add_peer(peer)
@@ -161,8 +161,8 @@ class TestAddPeersBatch:
     def test_batch_add(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
         peers = [
-            WireGuardPeer(uuid="", desc="Site A", ipaddr="10.254.250.200", peer_pubkey="A=="),
-            WireGuardPeer(uuid="", desc="Site B", ipaddr="10.254.250.201", peer_pubkey="B=="),
+            WireGuardPeer(uuid="", desc="Site A", ipaddr="10.100.0.200", peer_pubkey="A=="),
+            WireGuardPeer(uuid="", desc="Site B", ipaddr="10.100.0.201", peer_pubkey="B=="),
         ]
         policy = wg.add_peers_batch(peers)
         assert len(policy.peers) == 5  # 3 existing + 2 new
@@ -170,8 +170,8 @@ class TestAddPeersBatch:
     def test_batch_conflict_within_batch(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
         peers = [
-            WireGuardPeer(uuid="", desc="Site A", ipaddr="10.254.250.200", peer_pubkey="A=="),
-            WireGuardPeer(uuid="", desc="Site B", ipaddr="10.254.250.200", peer_pubkey="B=="),
+            WireGuardPeer(uuid="", desc="Site A", ipaddr="10.100.0.200", peer_pubkey="A=="),
+            WireGuardPeer(uuid="", desc="Site B", ipaddr="10.100.0.200", peer_pubkey="B=="),
         ]
         with pytest.raises(RuijieWireGuardConflictError):
             wg.add_peers_batch(peers)
@@ -183,24 +183,24 @@ class TestUpdatePeer:
         wg = WireGuardManager(mock_gateway)
         peer = WireGuardPeer(
             uuid="peer_uuid_001",
-            desc="laptop-Danny-Updated",
-            ipaddr="10.254.250.2",
+            desc="laptop-user1-Updated",
+            ipaddr="10.100.0.2",
             peer_pubkey="FAKE_PUBKEY_DANNY==",
         )
         policy = wg.update_peer(peer, match_by="uuid")
         updated = [p for p in policy.peers if p.uuid == "peer_uuid_001"][0]
-        assert updated.desc == "laptop-Danny-Updated"
+        assert updated.desc == "laptop-user1-Updated"
 
     def test_update_by_ip(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
         peer = WireGuardPeer(
             uuid="new_uuid",
             desc="Updated by IP",
-            ipaddr="10.254.250.105",
+            ipaddr="10.100.0.105",
             peer_pubkey="NEW_KEY==",
         )
         policy = wg.update_peer(peer, match_by="ip")
-        updated = [p for p in policy.peers if p.ipaddr == "10.254.250.105"][0]
+        updated = [p for p in policy.peers if p.ipaddr == "10.100.0.105"][0]
         assert updated.desc == "Updated by IP"
 
     def test_update_not_found(self, mock_gateway: MockGatewayClient):
@@ -219,9 +219,9 @@ class TestDeletePeer:
 
     def test_delete_by_ip(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
-        policy = wg.delete_peer(ip="10.254.250.2")
+        policy = wg.delete_peer(ip="10.100.0.2")
         assert len(policy.peers) == 2
-        assert not any(p.ipaddr == "10.254.250.2" for p in policy.peers)
+        assert not any(p.ipaddr == "10.100.0.2" for p in policy.peers)
 
     def test_delete_by_uuid(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
@@ -239,14 +239,14 @@ class TestRenamePeers:
     def test_rename(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
         count = wg.rename_peers({
-            "laptop-Danny": "Danny Laptop",
-            "Caridad Pineiro": "FC Pineiro",
+            "laptop-user1": "User1 Laptop",
+            "Site Alpha": "Alpha GW",
         })
         assert count == 2
 
     def test_rename_partial_match(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
-        count = wg.rename_peers({"laptop-Danny": "Danny", "nonexistent": "X"})
+        count = wg.rename_peers({"laptop-user1": "User1", "nonexistent": "X"})
         assert count == 1
 
     def test_rename_no_match(self, mock_gateway: MockGatewayClient):
@@ -269,15 +269,15 @@ class TestListClientPolicies:
     def test_get_client_policy_default(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
         policy = wg.get_client_policy()
-        assert policy.endpoint == "67.203.206.66"
+        assert policy.endpoint == "198.51.100.1"
 
 
 class TestUpdateClientEndpoint:
 
     def test_changes_endpoint(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
-        policy = wg.update_client_endpoint("centrouniquec.ruijieddnsd.com")
-        assert policy.endpoint == "centrouniquec.ruijieddnsd.com"
+        policy = wg.update_client_endpoint("hub.example.invalid")
+        assert policy.endpoint == "hub.example.invalid"
 
     def test_changes_endpoint_and_port(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
@@ -294,14 +294,14 @@ class TestExportPeerConfig:
     def test_export(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
         policy = wg.get_server_policy()
-        peer = policy.peers[1]  # Caridad Pineiro
+        peer = policy.peers[1]  # Site Alpha
         cfg = wg.export_peer_config(
             peer, policy,
-            hub_endpoint="centrouniquec.ruijieddnsd.com",
+            hub_endpoint="hub.example.invalid",
         )
-        assert cfg.interface_ip == "10.254.250.105"
+        assert cfg.interface_ip == "10.100.0.105"
         assert cfg.peer_pubkey == policy.local_pubkey
-        assert cfg.endpoint == "centrouniquec.ruijieddnsd.com"
+        assert cfg.endpoint == "hub.example.invalid"
         assert cfg.preshared_key == peer.preshared_key
         assert cfg.private_key == ""  # not available server-side
 
@@ -336,42 +336,42 @@ class TestAllocateInterfaceIp:
 
     def test_skips_used(self):
         ip = WireGuardManager.allocate_interface_ip(
-            "10.254.250.0/24",
-            {"10.254.250.1", "10.254.250.2"},
+            "10.100.0.0/24",
+            {"10.100.0.1", "10.100.0.2"},
         )
-        assert ip == "10.254.250.3"
+        assert ip == "10.100.0.3"
 
     def test_preferred_available(self):
         ip = WireGuardManager.allocate_interface_ip(
-            "10.254.250.0/24",
-            {"10.254.250.2"},
-            preferred="10.254.250.100",
+            "10.100.0.0/24",
+            {"10.100.0.2"},
+            preferred="10.100.0.100",
         )
-        assert ip == "10.254.250.100"
+        assert ip == "10.100.0.100"
 
     def test_preferred_taken(self):
         ip = WireGuardManager.allocate_interface_ip(
-            "10.254.250.0/24",
-            {"10.254.250.1", "10.254.250.100"},
-            preferred="10.254.250.100",
+            "10.100.0.0/24",
+            {"10.100.0.1", "10.100.0.100"},
+            preferred="10.100.0.100",
         )
-        assert ip != "10.254.250.100"
+        assert ip != "10.100.0.100"
 
     def test_reserve_gateway_skips_dot_one(self):
         ip = WireGuardManager.allocate_interface_ip(
-            "10.254.250.0/24",
+            "10.100.0.0/24",
             set(),
             reserve_gateway=True,
         )
-        assert ip == "10.254.250.2"  # .1 skipped
+        assert ip == "10.100.0.2"  # .1 skipped
 
     def test_no_reserve_uses_dot_one(self):
         ip = WireGuardManager.allocate_interface_ip(
-            "10.254.250.0/24",
+            "10.100.0.0/24",
             set(),
             reserve_gateway=False,
         )
-        assert ip == "10.254.250.1"
+        assert ip == "10.100.0.1"
 
     def test_exhausted_network(self):
         # /30 gives 2 hosts: .1 and .2 — reserve .1, use .2, none left
@@ -385,15 +385,15 @@ class TestAllocateNextPeerIp:
     def test_allocates(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
         # Existing peers use .2, .105, .103
-        ip = wg.allocate_next_peer_ip("10.254.250.0/24")
-        assert ip not in {"10.254.250.1", "10.254.250.2", "10.254.250.103", "10.254.250.105"}
+        ip = wg.allocate_next_peer_ip("10.100.0.0/24")
+        assert ip not in {"10.100.0.1", "10.100.0.2", "10.100.0.103", "10.100.0.105"}
 
 
 class TestBuildAccessibleIps:
 
     def test_default_interface_only(self):
-        result = WireGuardManager.build_accessible_ips("10.254.250.5")
-        assert result == ["10.254.250.5/32"]
+        result = WireGuardManager.build_accessible_ips("10.100.0.5")
+        assert result == ["10.100.0.5/32"]
 
     def test_custom_ranges(self):
         result = WireGuardManager.build_accessible_ips("10.0.0.1", custom_ranges=["10.0.0.0/24"])
@@ -407,7 +407,7 @@ class TestBuildAccessibleIps:
 class TestSuggestPolicyName:
 
     def test_basic(self):
-        assert WireGuardManager.suggest_policy_name("Caridad Pineiro") == "Caridad Pineiro GW"
+        assert WireGuardManager.suggest_policy_name("Site Alpha") == "Site Alpha GW"
 
     def test_with_suffix(self):
         name = WireGuardManager.suggest_policy_name("Pineiro", suffix="Primary")
@@ -427,17 +427,17 @@ class TestAddSitePeer:
         wg = WireGuardManager(mock_gateway)
         peer = wg.add_site_peer(
             desc="New Remote Site",
-            interface_ip="10.254.250.200",
+            interface_ip="10.100.0.200",
             peer_pubkey="REMOTE_PUB==",
             preshared_key="REMOTE_PSK==",
         )
         assert peer.desc == "New Remote Site"
-        assert peer.ipaddr == "10.254.250.200"
+        assert peer.ipaddr == "10.100.0.200"
         assert peer.uuid != ""
 
         # Verify it's in the updated state
         policy = wg.get_server_policy()
-        assert any(p.ipaddr == "10.254.250.200" for p in policy.peers)
+        assert any(p.ipaddr == "10.100.0.200" for p in policy.peers)
 
 
 # ── Drift Detection ──────────────────────────────────────────────────
@@ -448,18 +448,18 @@ class TestDetectDrift:
     def _make_peer_and_client(self):
         peer = WireGuardPeer(
             uuid="peer_uuid_002",
-            desc="Caridad Pineiro",
-            ipaddr="10.254.250.105",
-            peer_pubkey="wFTN1ARryoOvdyf37A0U8K1GA0fspN293guFjYlHRg4=",
-            preshared_key="riXUgQwPj06rWqQcRC/2U7+OXC+f6xA4od/DeksBo3o=",
+            desc="Site Alpha",
+            ipaddr="10.100.0.105",
+            peer_pubkey="STEpubkeyTESTxxxxxxxxxxxxxxxxxxxxxxxxxxx0=",
+            preshared_key="PSK000001TESTxxxxxxxxxxxxxxxxxxxxxxxxxxx0=",
         )
         client = WireGuardClientPolicy(
             uuid="client_uuid_001",
             desc="US_WG",
-            endpoint="centrouniquec.ruijieddnsd.com",
-            local_addr="10.254.250.105/32",
-            local_pubkey="wFTN1ARryoOvdyf37A0U8K1GA0fspN293guFjYlHRg4=",
-            preshared_key="riXUgQwPj06rWqQcRC/2U7+OXC+f6xA4od/DeksBo3o=",
+            endpoint="hub.example.invalid",
+            local_addr="10.100.0.105/32",
+            local_pubkey="STEpubkeyTESTxxxxxxxxxxxxxxxxxxxxxxxxxxx0=",
+            preshared_key="PSK000001TESTxxxxxxxxxxxxxxxxxxxxxxxxxxx0=",
         )
         return peer, client
 
@@ -473,20 +473,20 @@ class TestDetectDrift:
     def test_endpoint_drift(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
         peer, client = self._make_peer_and_client()
-        client.endpoint = "67.203.206.66"  # old endpoint
+        client.endpoint = "198.51.100.1"  # old endpoint
         report = wg.detect_drift(
             peer, client,
-            expected_endpoint="centrouniquec.ruijieddnsd.com",
+            expected_endpoint="hub.example.invalid",
         )
         assert report.has_drift
         endpoint_drift = [d for d in report.drifts if d.field == "endpoint"]
         assert len(endpoint_drift) == 1
-        assert endpoint_drift[0].actual == "67.203.206.66"
+        assert endpoint_drift[0].actual == "198.51.100.1"
 
     def test_ip_drift(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
         peer, client = self._make_peer_and_client()
-        client.local_addr = "10.254.250.99/32"
+        client.local_addr = "10.100.0.99/32"
         report = wg.detect_drift(peer, client)
         assert report.has_drift
         assert any(d.field == "interface_ip" for d in report.drifts)
@@ -545,11 +545,11 @@ class TestReconciliation:
 
     def test_apply_reconciliation_site_only(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
-        site_gw = MockGatewayClient(host="10.254.250.105")
+        site_gw = MockGatewayClient(host="10.100.0.105")
 
         plan = ReconciliationPlan(
             peer_desc="test",
-            peer_ip="10.254.250.105",
+            peer_ip="10.100.0.105",
             site_updates={"endpoint": "new.host.com"},
         )
         wg.apply_reconciliation(plan, site_client=site_gw)
@@ -570,8 +570,8 @@ class TestReconciliation:
     def test_apply_reconciliation_hub_only(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
         plan = ReconciliationPlan(
-            peer_desc="Caridad Pineiro",
-            peer_ip="10.254.250.105",
+            peer_desc="Site Alpha",
+            peer_ip="10.100.0.105",
             hub_updates={"peer_pubkey": "CORRECTED_KEY=="},
         )
         wg.apply_reconciliation(plan)
