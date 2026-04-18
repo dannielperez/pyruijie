@@ -1,8 +1,11 @@
-"""Typed models for Ruijie Cloud API responses."""
+"""Typed models for Ruijie Cloud API responses and Gateway WireGuard configuration."""
 
 from __future__ import annotations
 
-from ipaddress import IPv4Network
+import uuid as _uuid
+from dataclasses import asdict, dataclass, field
+from ipaddress import IPv4Interface, IPv4Network, ip_interface, ip_network
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -229,3 +232,304 @@ def parse_vlan_list(vlan_str: str) -> set[int]:
         elif part.isdigit():
             vlans.add(int(part))
     return vlans
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Gateway WireGuard models (dataclasses — for local LuCI JSON-RPC API)
+# ══════════════════════════════════════════════════════════════════════
+
+
+@dataclass
+class WireGuardPeer:
+    """A single WireGuard peer/client registered on a server policy.
+
+    Confirmed fields from ``devSta.get`` getype=1 → serverlist[].clientlist[]:
+        uuid, desc, ipaddr, peerPubkey, presharedkey, allowips
+
+    Additional runtime fields (present in status queries but not config):
+        endpoint, rxbyte, txbyte, updateTime
+    """
+
+    uuid: str
+    desc: str
+    ipaddr: str
+    peer_pubkey: str
+    preshared_key: str = ""
+    allow_ips: list[str] = field(default_factory=list)
+    endpoint: str = ""
+    rx_bytes: int = 0
+    tx_bytes: int = 0
+    update_time: str = ""
+    raw: dict = field(default_factory=dict, repr=False)
+
+    @classmethod
+    def from_gateway(cls, data: dict) -> WireGuardPeer:
+        return cls(
+            uuid=data.get("uuid", ""),
+            desc=data.get("desc", ""),
+            ipaddr=data.get("ipaddr", ""),
+            peer_pubkey=data.get("peerPubkey", ""),
+            preshared_key=data.get("presharedkey", ""),
+            allow_ips=data.get("allowips", []),
+            endpoint=data.get("endpoint", ""),
+            rx_bytes=int(data.get("rxbyte", 0) or 0),
+            tx_bytes=int(data.get("txbyte", 0) or 0),
+            update_time=data.get("updateTime", ""),
+            raw=data,
+        )
+
+    def to_gateway(self) -> dict:
+        return {
+            "uuid": self.uuid or _uuid.uuid4().hex,
+            "desc": self.desc,
+            "ipaddr": self.ipaddr,
+            "peerPubkey": self.peer_pubkey,
+            "presharedkey": self.preshared_key,
+            "allowips": self.allow_ips or [f"{self.ipaddr}/32"],
+        }
+
+    def to_dict(self) -> dict:
+        d = asdict(self)
+        d.pop("raw", None)
+        return d
+
+
+@dataclass
+class WireGuardServerPolicy:
+    """A WireGuard VPN Server policy on the gateway.
+
+    Confirmed fields from ``devSta.get`` getype=1 → serverlist[].
+    """
+
+    uuid: str
+    desc: str
+    enabled: bool = True
+    local_addr: str = ""
+    local_port: str = "51820"
+    local_privkey: str = ""
+    local_pubkey: str = ""
+    local_dns: list[str] = field(default_factory=list)
+    peers: list[WireGuardPeer] = field(default_factory=list)
+    raw: dict = field(default_factory=dict, repr=False)
+
+    @classmethod
+    def from_gateway(cls, data: dict) -> WireGuardServerPolicy:
+        peers = [WireGuardPeer.from_gateway(p) for p in data.get("clientlist", [])]
+        return cls(
+            uuid=data.get("uuid", ""),
+            desc=data.get("desc", ""),
+            enabled=data.get("enable") == "1",
+            local_addr=data.get("localAddr", ""),
+            local_port=data.get("localPort", "51820"),
+            local_privkey=data.get("localPrivkey", ""),
+            local_pubkey=data.get("localPubkey", ""),
+            local_dns=data.get("localDns", []),
+            peers=peers,
+            raw=data,
+        )
+
+    def to_gateway(self) -> dict:
+        return {
+            "uuid": self.uuid,
+            "enable": "1" if self.enabled else "0",
+            "type": "1",
+            "desc": self.desc,
+            "localAddr": self.local_addr,
+            "localPort": self.local_port,
+            "localPrivkey": self.local_privkey,
+            "localPubkey": self.local_pubkey,
+            "localDns": self.local_dns,
+            "clientlist": [p.to_gateway() for p in self.peers],
+        }
+
+    def to_dict(self) -> dict:
+        d = asdict(self)
+        d.pop("raw", None)
+        return d
+
+    def find_peer(
+        self,
+        *,
+        ip: str | None = None,
+        pubkey: str | None = None,
+        desc: str | None = None,
+    ) -> WireGuardPeer | None:
+        for p in self.peers:
+            if ip and p.ipaddr == ip:
+                return p
+            if pubkey and p.peer_pubkey == pubkey:
+                return p
+            if desc and p.desc == desc:
+                return p
+        return None
+
+
+@dataclass
+class WireGuardClientPolicy:
+    """A WireGuard VPN Client policy on a site gateway.
+
+    Confirmed fields from ``devConfig.get`` module=wireguard on EG310GH-P-E.
+    """
+
+    uuid: str
+    desc: str
+    enabled: bool = True
+    endpoint: str = ""
+    endpoint_port: str = "51820"
+    local_addr: str = ""
+    local_port: str = "51820"
+    local_privkey: str = ""
+    local_pubkey: str = ""
+    peer_pubkey: str = ""
+    preshared_key: str = ""
+    allow_ips: list[str] = field(default_factory=list)
+    local_dns: list[str] = field(default_factory=list)
+    interface: str = "all"
+    keepalive: str = "30"
+    local_ifname: str = "wgclt0"
+    metric: str = "101"
+    priority: list[str] = field(default_factory=list)
+    strict_priority: str = "0"
+    rx_bytes: int = 0
+    tx_bytes: int = 0
+    update_time: str = ""
+    raw: dict = field(default_factory=dict, repr=False)
+
+    @classmethod
+    def from_gateway(cls, data: dict) -> WireGuardClientPolicy:
+        return cls(
+            uuid=data.get("uuid", ""),
+            desc=data.get("desc", ""),
+            enabled=data.get("enable") == "1",
+            endpoint=data.get("endpoint", ""),
+            endpoint_port=data.get("endpointPort", "51820"),
+            local_addr=data.get("localAddr", ""),
+            local_port=data.get("localPort", "51820"),
+            local_privkey=data.get("localPrivkey", ""),
+            local_pubkey=data.get("localPubkey", ""),
+            peer_pubkey=data.get("peerPubkey", ""),
+            preshared_key=data.get("presharedkey", ""),
+            allow_ips=data.get("allowips", []),
+            local_dns=data.get("localDns", []),
+            interface=data.get("intf", "all"),
+            keepalive=data.get("keepalive", "30"),
+            local_ifname=data.get("localIfname", "wgclt0"),
+            metric=data.get("metric", "101"),
+            priority=data.get("priority", []),
+            strict_priority=data.get("strictPriority", "0"),
+            rx_bytes=int(data.get("rxbyte", 0) or 0),
+            tx_bytes=int(data.get("txbyte", 0) or 0),
+            update_time=data.get("updateTime", ""),
+            raw=data,
+        )
+
+    def to_gateway(self) -> dict:
+        return {
+            "uuid": self.uuid,
+            "enable": "1" if self.enabled else "0",
+            "type": "0",
+            "desc": self.desc,
+            "endpoint": self.endpoint,
+            "endpointPort": self.endpoint_port,
+            "localAddr": self.local_addr,
+            "localPort": self.local_port,
+            "localPrivkey": self.local_privkey,
+            "localPubkey": self.local_pubkey,
+            "peerPubkey": self.peer_pubkey,
+            "presharedkey": self.preshared_key,
+            "allowips": self.allow_ips,
+            "localDns": self.local_dns,
+            "intf": self.interface,
+            "keepalive": self.keepalive,
+            "localIfname": self.local_ifname,
+            "metric": self.metric,
+            "priority": self.priority,
+            "strictPriority": self.strict_priority,
+        }
+
+    def to_dict(self) -> dict:
+        d = asdict(self)
+        d.pop("raw", None)
+        return d
+
+
+@dataclass
+class WireGuardConfigExport:
+    """A standard WireGuard .conf file representation."""
+
+    interface_ip: str
+    private_key: str = ""
+    dns: str = "8.8.8.8"
+    peer_pubkey: str = ""
+    endpoint: str = ""
+    endpoint_port: str = "51820"
+    allowed_ips: str = "0.0.0.0/0"
+    preshared_key: str = ""
+
+    def to_conf_text(self) -> str:
+        lines = ["[Interface]"]
+        if self.private_key:
+            lines.append(f"PrivateKey = {self.private_key}")
+        lines.append(f"Address = {self.interface_ip}/32")
+        if self.dns:
+            lines.append(f"DNS = {self.dns}")
+        lines.append("")
+        lines.append("[Peer]")
+        if self.peer_pubkey:
+            lines.append(f"PublicKey = {self.peer_pubkey}")
+        if self.endpoint:
+            ep = f"{self.endpoint}:{self.endpoint_port}" if self.endpoint_port else self.endpoint
+            lines.append(f"Endpoint = {ep}")
+        if self.allowed_ips:
+            lines.append(f"AllowedIPs = {self.allowed_ips}")
+        if self.preshared_key:
+            lines.append(f"PresharedKey = {self.preshared_key}")
+        lines.append("")
+        return "\n".join(lines)
+
+    @classmethod
+    def from_conf_text(cls, text: str) -> WireGuardConfigExport:
+        import re
+
+        def _get(key: str) -> str:
+            m = re.search(
+                rf"^\s*{re.escape(key)}\s*=\s*(.+)$",
+                text,
+                re.MULTILINE | re.IGNORECASE,
+            )
+            return m.group(1).strip() if m else ""
+
+        address = _get("Address")
+        interface_ip = address.split("/")[0] if address else ""
+        endpoint_raw = _get("Endpoint")
+        endpoint = ""
+        endpoint_port = "51820"
+        if endpoint_raw:
+            if ":" in endpoint_raw:
+                endpoint, endpoint_port = endpoint_raw.rsplit(":", 1)
+            else:
+                endpoint = endpoint_raw
+
+        return cls(
+            interface_ip=interface_ip,
+            private_key=_get("PrivateKey"),
+            dns=_get("DNS"),
+            peer_pubkey=_get("PublicKey"),
+            endpoint=endpoint,
+            endpoint_port=endpoint_port,
+            allowed_ips=_get("AllowedIPs"),
+            preshared_key=_get("PresharedKey"),
+        )
+
+
+# ── Network helpers ───────────────────────────────────────────────────
+
+
+def validate_ipv4_cidr(value: str) -> IPv4Interface:
+    """Parse and validate an IPv4 address with optional CIDR prefix."""
+    return ip_interface(value)
+
+
+def validate_ipv4_network(value: str) -> IPv4Network:
+    """Parse and validate an IPv4 network."""
+    return ip_network(value, strict=False)
