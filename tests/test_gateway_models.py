@@ -24,10 +24,10 @@ class TestWireGuardPeer:
     RAW = {
         "uuid": "peer_uuid_001",
         "desc": "Site Alpha",
-        "ipaddr": "10.0.0.105",
-        "peerPubkey": "wFTN1ARryoOvdyf37A0U8K1GA0fspN293guFjYlHRg4=",
-        "presharedkey": "***REMOVED***",
-        "allowips": ["10.0.0.105/32"],
+        "ipaddr": "10.100.0.105",
+        "peerPubkey": "STEpubkeyTESTxxxxxxxxxxxxxxxxxxxxxxxxxxx0=",
+        "presharedkey": "PSK000001TESTxxxxxxxxxxxxxxxxxxxxxxxxxxx0=",
+        "allowips": ["10.100.0.105/32"],
         "endpoint": "10.1.2.3",
         "rxbyte": "1572",
         "txbyte": "2230",
@@ -38,10 +38,10 @@ class TestWireGuardPeer:
         peer = WireGuardPeer.from_gateway(self.RAW)
         assert peer.uuid == "peer_uuid_001"
         assert peer.desc == "Site Alpha"
-        assert peer.ipaddr == "10.0.0.105"
-        assert peer.peer_pubkey == "wFTN1ARryoOvdyf37A0U8K1GA0fspN293guFjYlHRg4="
-        assert peer.preshared_key == "***REMOVED***"
-        assert peer.allow_ips == ["10.0.0.105/32"]
+        assert peer.ipaddr == "10.100.0.105"
+        assert peer.peer_pubkey == "STEpubkeyTESTxxxxxxxxxxxxxxxxxxxxxxxxxxx0="
+        assert peer.preshared_key == "PSK000001TESTxxxxxxxxxxxxxxxxxxxxxxxxxxx0="
+        assert peer.allow_ips == ["10.100.0.105/32"]
         assert peer.rx_bytes == 1572
         assert peer.tx_bytes == 2230
         assert peer.raw == self.RAW
@@ -57,10 +57,10 @@ class TestWireGuardPeer:
         out = peer.to_gateway()
         assert out["uuid"] == "peer_uuid_001"
         assert out["desc"] == "Site Alpha"
-        assert out["ipaddr"] == "10.0.0.105"
+        assert out["ipaddr"] == "10.100.0.105"
         assert out["peerPubkey"] == peer.peer_pubkey
         assert out["presharedkey"] == peer.preshared_key
-        assert out["allowips"] == ["10.0.0.105/32"]
+        assert out["allowips"] == ["10.100.0.105/32"]
         # Runtime fields should not be in output
         assert "rxbyte" not in out
         assert "endpoint" not in out
@@ -100,7 +100,7 @@ class TestWireGuardServerPolicy:
         "enable": "1",
         "type": "1",
         "desc": "HQ_MainOffice_WG",
-        "localAddr": "10.0.0.1/20",
+        "localAddr": "10.100.0.1/20",
         "localPort": "51820",
         "localPrivkey": "PRIVKEY==",
         "localPubkey": "PUBKEY==",
@@ -109,10 +109,10 @@ class TestWireGuardServerPolicy:
             {
                 "uuid": "p1",
                 "desc": "peer1",
-                "ipaddr": "10.0.0.2",
+                "ipaddr": "10.100.0.2",
                 "peerPubkey": "K1==",
                 "presharedkey": "PSK1==",
-                "allowips": ["10.0.0.2/32"],
+                "allowips": ["10.100.0.2/32"],
             },
         ],
     }
@@ -122,7 +122,7 @@ class TestWireGuardServerPolicy:
         assert policy.uuid == "server_uuid_001"
         assert policy.desc == "HQ_MainOffice_WG"
         assert policy.enabled is True
-        assert policy.local_addr == "10.0.0.1/20"
+        assert policy.local_addr == "10.100.0.1/20"
         assert policy.local_port == "51820"
         assert len(policy.peers) == 1
         assert policy.peers[0].desc == "peer1"
@@ -144,7 +144,7 @@ class TestWireGuardServerPolicy:
 
     def test_find_peer_by_ip(self):
         policy = WireGuardServerPolicy.from_gateway(self.RAW)
-        p = policy.find_peer(ip="10.0.0.2")
+        p = policy.find_peer(ip="10.100.0.2")
         assert p is not None
         assert p.desc == "peer1"
 
@@ -174,9 +174,9 @@ class TestWireGuardClientPolicy:
         "enable": "1",
         "type": "0",
         "desc": "WG_CLIENT",
-        "endpoint": "***REMOVED***",
+        "endpoint": "198.51.100.1",
         "endpointPort": "51820",
-        "localAddr": "10.0.0.105/32",
+        "localAddr": "10.100.0.105/32",
         "localPort": "51820",
         "localPrivkey": "PRIVKEY==",
         "localPubkey": "PUBKEY==",
@@ -199,9 +199,9 @@ class TestWireGuardClientPolicy:
         assert policy.uuid == "client_uuid_001"
         assert policy.desc == "WG_CLIENT"
         assert policy.enabled is True
-        assert policy.endpoint == "***REMOVED***"
+        assert policy.endpoint == "198.51.100.1"
         assert policy.endpoint_port == "51820"
-        assert policy.local_addr == "10.0.0.105/32"
+        assert policy.local_addr == "10.100.0.105/32"
         assert policy.local_pubkey == "PUBKEY=="
         assert policy.peer_pubkey == "SERVER_PUBKEY=="
         assert policy.keepalive == "30"
@@ -213,7 +213,7 @@ class TestWireGuardClientPolicy:
         assert out["uuid"] == "client_uuid_001"
         assert out["enable"] == "1"
         assert out["type"] == "0"
-        assert out["endpoint"] == "***REMOVED***"
+        assert out["endpoint"] == "198.51.100.1"
         assert out["endpointPort"] == "51820"
         assert out["peerPubkey"] == "SERVER_PUBKEY=="
         # Runtime fields should not be in config output
@@ -236,31 +236,31 @@ class TestWireGuardConfigExport:
 
     CONF_TEXT = """\
 [Interface]
-PrivateKey = ***REMOVED***
-Address = 10.0.0.101/32
+PrivateKey = PRIVKEYxxTESTxxxxxxxxxxxxxxxxxxxxxxxxxxx0=
+Address = 10.100.0.101/32
 DNS = 8.8.8.8
 
 [Peer]
-PublicKey = u6tlEzHg/qQVZtnslLStHfuqDfMjxkDCsoLOpvEcyFI=
-Endpoint = ***REMOVED***:51820
-AllowedIPs = 10.0.0.101/32,10.0.0.1/32
-PresharedKey = ***REMOVED***
+PublicKey = SVRpubkeyTESTxxxxxxxxxxxxxxxxxxxxxxxxxxx0=
+Endpoint = hub.example.invalid:51820
+AllowedIPs = 10.100.0.101/32,10.100.0.1/32
+PresharedKey = PSK000003TESTxxxxxxxxxxxxxxxxxxxxxxxxxxx0=
 """
 
     def test_from_conf_text(self):
         cfg = WireGuardConfigExport.from_conf_text(self.CONF_TEXT)
-        assert cfg.interface_ip == "10.0.0.101"
-        assert cfg.private_key == "***REMOVED***"
+        assert cfg.interface_ip == "10.100.0.101"
+        assert cfg.private_key == "PRIVKEYxxTESTxxxxxxxxxxxxxxxxxxxxxxxxxxx0="
         assert cfg.dns == "8.8.8.8"
-        assert cfg.peer_pubkey == "u6tlEzHg/qQVZtnslLStHfuqDfMjxkDCsoLOpvEcyFI="
-        assert cfg.endpoint == "***REMOVED***"
+        assert cfg.peer_pubkey == "SVRpubkeyTESTxxxxxxxxxxxxxxxxxxxxxxxxxxx0="
+        assert cfg.endpoint == "hub.example.invalid"
         assert cfg.endpoint_port == "51820"
-        assert "10.0.0.101/32" in cfg.allowed_ips
-        assert cfg.preshared_key == "***REMOVED***"
+        assert "10.100.0.101/32" in cfg.allowed_ips
+        assert cfg.preshared_key == "PSK000003TESTxxxxxxxxxxxxxxxxxxxxxxxxxxx0="
 
     def test_to_conf_text(self):
         cfg = WireGuardConfigExport(
-            interface_ip="10.0.0.101",
+            interface_ip="10.100.0.101",
             private_key="PRIVKEY==",
             dns="8.8.8.8",
             peer_pubkey="PUBKEY==",
@@ -272,7 +272,7 @@ PresharedKey = ***REMOVED***
         text = cfg.to_conf_text()
         assert "[Interface]" in text
         assert "PrivateKey = PRIVKEY==" in text
-        assert "Address = 10.0.0.101/32" in text
+        assert "Address = 10.100.0.101/32" in text
         assert "DNS = 8.8.8.8" in text
         assert "[Peer]" in text
         assert "PublicKey = PUBKEY==" in text
@@ -312,13 +312,13 @@ PresharedKey = ***REMOVED***
 class TestValidation:
 
     def test_validate_ipv4_cidr(self):
-        iface = validate_ipv4_cidr("10.0.0.105/32")
-        assert str(iface.ip) == "10.0.0.105"
+        iface = validate_ipv4_cidr("10.100.0.105/32")
+        assert str(iface.ip) == "10.100.0.105"
         assert iface.network.prefixlen == 32
 
     def test_validate_ipv4_network(self):
-        net = validate_ipv4_network("10.0.0.0/20")
-        assert str(net) == "10.254.240.0/20"
+        net = validate_ipv4_network("10.100.0.0/20")
+        assert str(net) == "10.100.0.0/20"
 
     def test_invalid_cidr_raises(self):
         with pytest.raises(ValueError):
