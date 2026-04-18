@@ -47,7 +47,7 @@ class GatewayClient:
 
     Usage::
 
-        gw = GatewayClient("10.200.0.1", "admin", "Unique2025@")
+        gw = GatewayClient("192.168.1.1", "admin", "s3cretP@ss")
         gw.login()
         result = gw.cmd("devSta.get", "wireguard", data={"getype": "1"})
     """
