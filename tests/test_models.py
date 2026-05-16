@@ -21,8 +21,8 @@ class TestProject:
         assert p.group_id == "g1"
 
     def test_numeric_group_id_coerced_to_str(self):
-        p = Project.model_validate({"name": "Numeric", "groupId": 6687758})
-        assert p.group_id == "6687758"
+        p = Project.model_validate({"name": "Numeric", "groupId": 123456})
+        assert p.group_id == "123456"
         assert isinstance(p.group_id, str)
 
     def test_none_group_id_becomes_empty_str(self):
