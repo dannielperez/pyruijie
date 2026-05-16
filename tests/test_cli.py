@@ -261,7 +261,7 @@ class TestPeersList:
         main(["peers", "list"])
 
         out = capsys.readouterr().out
-        assert "Caridad Pineiro" in out
+        assert "Site Alpha" in out
         assert "10.0.0.105" in out
         assert "Peers: 3" in out
 
@@ -278,7 +278,7 @@ class TestPeersList:
         out = capsys.readouterr().out
         data = json.loads(out)
         assert len(data) == 3
-        assert any(p["desc"] == "Caridad Pineiro" for p in data)
+        assert any(p["desc"] == "Site Alpha" for p in data)
 
 
 # ── peers add command tests ───────────────────────────────────────────

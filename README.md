@@ -213,7 +213,7 @@ gateways via the local LuCI JSON-RPC API. Tested on EG1510XS and EG310GH-P-E.
 ```python
 from pyruijie import GatewayClient, WireGuardManager
 
-gw = GatewayClient("***REMOVED***", "admin", "password")
+gw = GatewayClient("10.100.1.1", "admin", "password")
 gw.login()
 
 wg = WireGuardManager(gw)
@@ -227,16 +227,16 @@ for server in wg.list_server_policies():
 # Add a new site peer to the hub
 wg.add_site_peer(
     desc="New Site GW",
-    interface_ip="10.0.0.200",
+    interface_ip="10.100.0.200",
     peer_pubkey="base64-pubkey==",
 )
 
 # Detect drift between hub and site
-site_gw = GatewayClient("10.0.0.105", "admin", "password")
+site_gw = GatewayClient("10.100.0.105", "admin", "password")
 site_gw.login()
 site_wg = WireGuardManager(site_gw)
 client_policy = site_wg.get_client_policy()
-peer = wg.get_peer(ip="10.0.0.105")
+peer = wg.get_peer(ip="10.100.0.105")
 report = wg.detect_drift(peer, client_policy)
 print(report)
 ```
@@ -247,7 +247,7 @@ pyruijie includes a CLI for common WireGuard operations. Set hub credentials
 in a `.env` file:
 
 ```
-R_USCC_GW_IP=***REMOVED***
+R_USCC_GW_IP=10.100.1.1
 R_USCC_GW_USERNAME=admin
 R_USCC_GW_PASSWORD=yourpassword
 ```
@@ -260,13 +260,13 @@ python -m pyruijie peers list
 python -m pyruijie peers list --json
 
 # Add a peer (with confirmation prompt)
-python -m pyruijie peers add --desc "New Site" --ip 10.0.0.200 --pubkey "key=="
+python -m pyruijie peers add --desc "New Site" --ip 10.100.0.200 --pubkey "key=="
 
 # Add with dry-run (no changes)
-python -m pyruijie peers add --desc "New Site" --ip 10.0.0.200 --pubkey "key==" --dry-run
+python -m pyruijie peers add --desc "New Site" --ip 10.100.0.200 --pubkey "key==" --dry-run
 
 # Remove a peer
-python -m pyruijie peers remove --ip 10.0.0.200
+python -m pyruijie peers remove --ip 10.100.0.200
 
 # Rename peers from a JSON map file
 python -m pyruijie peers rename rename_map.json
@@ -277,19 +277,19 @@ python -m pyruijie peers rename rename_map.json
 ```bash
 # Onboard a new site — adds hub peer (with auto IP allocation)
 python -m pyruijie onboard-site \
-    --site-name "Caridad Bayamon" \
-    --site-ip 10.0.0.50 \
+    --site-name "Example Site" \
+    --site-ip 10.100.0.50 \
     --pubkey "site-gateway-pubkey==" \
     --dry-run
 
 # Full onboard — hub peer + configure site client policy
 python -m pyruijie onboard-site \
-    --site-name "Caridad Bayamon" \
-    --site-ip 10.0.0.50 \
+    --site-name "Example Site" \
+    --site-ip 10.100.0.50 \
     --pubkey "site-gateway-pubkey==" \
     --configure-site \
     --site-privkey "site-gateway-privkey==" \
-    --hub-endpoint ***REMOVED*** \
+    --hub-endpoint hub.example.com \
     -y -o result.json
 ```
 
@@ -297,25 +297,25 @@ python -m pyruijie onboard-site \
 
 ```bash
 # Probe a site gateway's WireGuard config
-python -m pyruijie probe 10.0.0.105
+python -m pyruijie probe 10.100.0.105
 
 # Detect configuration drift between hub and sites
 python -m pyruijie drift
-python -m pyruijie drift --peer-ip 10.0.0.105 10.0.0.103
+python -m pyruijie drift --peer-ip 10.100.0.105 10.100.0.103
 ```
 
 ### Endpoint Updates
 
 ```bash
 # Update WG client endpoint on site gateways (replaces data/update_site_wg_endpoint.py)
-python -m pyruijie update-endpoint 10.0.0.105 10.0.0.103 \
-    --new-endpoint ***REMOVED*** \
+python -m pyruijie update-endpoint 10.100.0.105 10.100.0.103 \
+    --new-endpoint hub.example.com \
     --old-endpoint ***REMOVED*** \
     --dry-run
 
 # From a targets file
 python -m pyruijie update-endpoint --from-file targets.json \
-    --new-endpoint ***REMOVED***
+    --new-endpoint hub.example.com
 ```
 
 ### Script Migration Reference
