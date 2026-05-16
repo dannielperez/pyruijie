@@ -4,7 +4,7 @@ Entry point::
 
     python -m pyruijie --help
     python -m pyruijie peers list
-    python -m pyruijie onboard-site --site-name "Site Delta" ...
+    python -m pyruijie onboard-site --site-name "Example Site" ...
 """
 
 from __future__ import annotations
