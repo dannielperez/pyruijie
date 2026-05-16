@@ -27,8 +27,9 @@ from pyruijie.models import (
 )
 from pyruijie.utils import format_mac
 from pyruijie.wireguard import WireGuardManager
+from pyruijie import workflows
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
     # Cloud API
@@ -57,4 +58,5 @@ __all__ = [
     "WireGuardClientPolicy",
     "WireGuardConfigExport",
     "WireGuardManager",
+    "workflows",
 ]
