@@ -205,6 +205,130 @@ pip install -e ".[dev]"
 pytest
 ```
 
+## Gateway Management (LuCI JSON-RPC)
+
+pyruijie also provides a `GatewayClient` for direct management of Ruijie EG
+gateways via the local LuCI JSON-RPC API. Tested on EG1510XS and EG310GH-P-E.
+
+```python
+from pyruijie import GatewayClient, WireGuardManager
+
+gw = GatewayClient("10.200.0.1", "admin", "password")
+gw.login()
+
+wg = WireGuardManager(gw)
+
+# List server policies and peers
+for server in wg.list_server_policies():
+    print(f"{server.desc} ({server.local_addr}) — {len(server.peers)} peers")
+    for peer in server.peers:
+        print(f"  {peer.desc}: {peer.ipaddr}")
+
+# Add a new site peer to the hub
+wg.add_site_peer(
+    desc="New Site GW",
+    interface_ip="10.254.250.200",
+    peer_pubkey="base64-pubkey==",
+)
+
+# Detect drift between hub and site
+site_gw = GatewayClient("10.254.250.105", "admin", "password")
+site_gw.login()
+site_wg = WireGuardManager(site_gw)
+client_policy = site_wg.get_client_policy()
+peer = wg.get_peer(ip="10.254.250.105")
+report = wg.detect_drift(peer, client_policy)
+print(report)
+```
+
+## CLI Usage
+
+pyruijie includes a CLI for common WireGuard operations. Set hub credentials
+in a `.env` file:
+
+```
+R_USCC_GW_IP=10.200.0.1
+R_USCC_GW_USERNAME=admin
+R_USCC_GW_PASSWORD=yourpassword
+```
+
+### Peer Management
+
+```bash
+# List all peers on the hub
+python -m pyruijie peers list
+python -m pyruijie peers list --json
+
+# Add a peer (with confirmation prompt)
+python -m pyruijie peers add --desc "New Site" --ip 10.254.250.200 --pubkey "key=="
+
+# Add with dry-run (no changes)
+python -m pyruijie peers add --desc "New Site" --ip 10.254.250.200 --pubkey "key==" --dry-run
+
+# Remove a peer
+python -m pyruijie peers remove --ip 10.254.250.200
+
+# Rename peers from a JSON map file
+python -m pyruijie peers rename rename_map.json
+```
+
+### Site Onboarding
+
+```bash
+# Onboard a new site — adds hub peer (with auto IP allocation)
+python -m pyruijie onboard-site \
+    --site-name "Site Delta" \
+    --site-ip 10.254.250.50 \
+    --pubkey "site-gateway-pubkey==" \
+    --dry-run
+
+# Full onboard — hub peer + configure site client policy
+python -m pyruijie onboard-site \
+    --site-name "Site Delta" \
+    --site-ip 10.254.250.50 \
+    --pubkey "site-gateway-pubkey==" \
+    --configure-site \
+    --site-privkey "site-gateway-privkey==" \
+    --hub-endpoint centrouniquec.ruijieddnsd.com \
+    -y -o result.json
+```
+
+### Probe & Drift Detection
+
+```bash
+# Probe a site gateway's WireGuard config
+python -m pyruijie probe 10.254.250.105
+
+# Detect configuration drift between hub and sites
+python -m pyruijie drift
+python -m pyruijie drift --peer-ip 10.254.250.105 10.254.250.103
+```
+
+### Endpoint Updates
+
+```bash
+# Update WG client endpoint on site gateways (replaces data/update_site_wg_endpoint.py)
+python -m pyruijie update-endpoint 10.254.250.105 10.254.250.103 \
+    --new-endpoint centrouniquec.ruijieddnsd.com \
+    --old-endpoint 67.203.206.66 \
+    --dry-run
+
+# From a targets file
+python -m pyruijie update-endpoint --from-file targets.json \
+    --new-endpoint centrouniquec.ruijieddnsd.com
+```
+
+### Script Migration Reference
+
+| Old script | CLI equivalent |
+|---|---|
+| `data/probe_site_gw.py <ip>` | `python -m pyruijie probe <ip>` |
+| `data/update_site_wg_endpoint.py --check <ip>` | `python -m pyruijie update-endpoint <ip> --new-endpoint <ep> --dry-run` |
+| `data/update_site_wg_endpoint.py --apply --all` | `python -m pyruijie update-endpoint --from-file targets.json --new-endpoint <ep>` |
+| `data/update_wg_peers.py check` | `python -m pyruijie peers list` |
+| `data/update_wg_peers.py rename --apply` | `python -m pyruijie peers rename map.json -y` |
+| `data/import_wireguard_peers.py --apply` | `python -m pyruijie peers add ...` (per-peer) or `onboard-site` |
+
 ## License
 
 This project is licensed under the [Apache License 2.0](LICENSE).
