@@ -410,8 +410,8 @@ class TestSuggestPolicyName:
         assert WireGuardManager.suggest_policy_name("Site Alpha") == "Site Alpha GW"
 
     def test_with_suffix(self):
-        name = WireGuardManager.suggest_policy_name("Alpha", suffix="Primary")
-        assert name == "Alpha GW Primary"
+        name = WireGuardManager.suggest_policy_name("Site Beta", suffix="Primary")
+        assert name == "Site Beta GW Primary"
 
     def test_custom_role(self):
         name = WireGuardManager.suggest_policy_name("Site A", role="AP")
