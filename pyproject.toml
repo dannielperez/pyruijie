@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pyruijie"
-version = "0.3.0"
+version = "0.4.0"
 description = "Python client library for Ruijie/Reyee Cloud and Gateway management"
 readme = "README.md"
 license = "Apache-2.0"
@@ -45,6 +45,10 @@ Repository = "https://github.com/dannielperez/pyruijie"
 Documentation = "https://github.com/dannielperez/pyruijie#readme"
 Changelog = "https://github.com/dannielperez/pyruijie/blob/main/CHANGELOG.md"
 Issues = "https://github.com/dannielperez/pyruijie/issues"
+
+[project.scripts]
+pyruijie = "pyruijie.cli:main"
+pyruijie-workflow = "pyruijie.workflow_cli:workflow_cli"
 
 [project.optional-dependencies]
 dev = [
