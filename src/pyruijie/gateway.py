@@ -116,9 +116,7 @@ class GatewayClient:
 
         data = r.json()
         if data.get("data") is None:
-            raise RuijieAuthError(
-                f"Login failed for {self.host}: {data.get('error') or data}"
-            )
+            raise RuijieAuthError(f"Login failed for {self.host}: {data.get('error') or data}")
 
         self._sid = data["data"]["sid"]
         self._sn = data["data"].get("sn")

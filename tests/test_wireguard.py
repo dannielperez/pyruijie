@@ -9,17 +9,15 @@ from pyruijie.exceptions import (
     RuijieWireGuardError,
     RuijieWireGuardValidationError,
 )
-from pyruijie.models import WireGuardClientPolicy, WireGuardPeer, WireGuardServerPolicy
+from pyruijie.models import WireGuardClientPolicy, WireGuardPeer
 from pyruijie.wireguard import DriftField, DriftReport, ReconciliationPlan, WireGuardManager
 
-from .conftest import MockGatewayClient, SAMPLE_CLIENT_POLICY, SAMPLE_SERVER_POLICY
-
+from .conftest import SAMPLE_SERVER_POLICY, MockGatewayClient
 
 # ── Server Policy Tests ───────────────────────────────────────────────
 
 
 class TestListServerPolicies:
-
     def test_returns_parsed_policies(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
         policies = wg.list_server_policies()
@@ -44,7 +42,6 @@ class TestListServerPolicies:
 
 
 class TestUpdateServerPolicy:
-
     def test_update_pushes_config(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
         policy = wg.get_server_policy()
@@ -52,21 +49,16 @@ class TestUpdateServerPolicy:
         wg.update_server_policy(policy)
 
         # Verify a cmd_checked call was made
-        update_calls = [
-            c for c in mock_gateway.calls if c["method"] == "devConfig.update"
-        ]
+        update_calls = [c for c in mock_gateway.calls if c["method"] == "devConfig.update"]
         assert len(update_calls) >= 1
 
 
 class TestSetServerPolicyEnabled:
-
     def test_disable(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
         wg.set_server_policy_enabled(SAMPLE_SERVER_POLICY["uuid"], False)
 
-        update_calls = [
-            c for c in mock_gateway.calls if c["method"] == "devConfig.update"
-        ]
+        update_calls = [c for c in mock_gateway.calls if c["method"] == "devConfig.update"]
         assert len(update_calls) >= 1
         # The updated data should have enable="0"
         last_update = update_calls[-1]["data"]
@@ -77,7 +69,6 @@ class TestSetServerPolicyEnabled:
 
 
 class TestListPeers:
-
     def test_returns_all_peers(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
         peers = wg.list_peers()
@@ -88,7 +79,6 @@ class TestListPeers:
 
 
 class TestGetPeer:
-
     def test_by_ip(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
         peer = wg.get_peer(ip="10.100.0.2")
@@ -107,7 +97,6 @@ class TestGetPeer:
 
 
 class TestAddPeer:
-
     def test_add_new_peer(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
         peer = WireGuardPeer(
@@ -157,7 +146,6 @@ class TestAddPeer:
 
 
 class TestAddPeersBatch:
-
     def test_batch_add(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
         peers = [
@@ -178,7 +166,6 @@ class TestAddPeersBatch:
 
 
 class TestUpdatePeer:
-
     def test_update_by_uuid(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
         peer = WireGuardPeer(
@@ -216,7 +203,6 @@ class TestUpdatePeer:
 
 
 class TestDeletePeer:
-
     def test_delete_by_ip(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
         policy = wg.delete_peer(ip="10.100.0.2")
@@ -235,13 +221,14 @@ class TestDeletePeer:
 
 
 class TestRenamePeers:
-
     def test_rename(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
-        count = wg.rename_peers({
-            "laptop-user1": "User1 Laptop",
-            "Site Alpha": "Alpha GW",
-        })
+        count = wg.rename_peers(
+            {
+                "laptop-user1": "User1 Laptop",
+                "Site Alpha": "Alpha GW",
+            }
+        )
         assert count == 2
 
     def test_rename_partial_match(self, mock_gateway: MockGatewayClient):
@@ -259,7 +246,6 @@ class TestRenamePeers:
 
 
 class TestListClientPolicies:
-
     def test_returns_parsed(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
         policies = wg.list_client_policies()
@@ -273,7 +259,6 @@ class TestListClientPolicies:
 
 
 class TestUpdateClientEndpoint:
-
     def test_changes_endpoint(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
         policy = wg.update_client_endpoint("hub.example.invalid")
@@ -290,13 +275,13 @@ class TestUpdateClientEndpoint:
 
 
 class TestExportPeerConfig:
-
     def test_export(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
         policy = wg.get_server_policy()
         peer = policy.peers[1]  # Site Alpha
         cfg = wg.export_peer_config(
-            peer, policy,
+            peer,
+            policy,
             hub_endpoint="hub.example.invalid",
         )
         assert cfg.interface_ip == "10.100.0.105"
@@ -307,7 +292,6 @@ class TestExportPeerConfig:
 
 
 class TestParseConfigText:
-
     def test_parse(self):
         text = """\
 [Interface]
@@ -333,7 +317,6 @@ PresharedKey = PSK==
 
 
 class TestAllocateInterfaceIp:
-
     def test_skips_used(self):
         ip = WireGuardManager.allocate_interface_ip(
             "10.100.0.0/24",
@@ -381,7 +364,6 @@ class TestAllocateInterfaceIp:
 
 
 class TestAllocateNextPeerIp:
-
     def test_allocates(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
         # Existing peers use .2, .105, .103
@@ -390,7 +372,6 @@ class TestAllocateNextPeerIp:
 
 
 class TestBuildAccessibleIps:
-
     def test_default_interface_only(self):
         result = WireGuardManager.build_accessible_ips("10.100.0.5")
         assert result == ["10.100.0.5/32"]
@@ -405,7 +386,6 @@ class TestBuildAccessibleIps:
 
 
 class TestSuggestPolicyName:
-
     def test_basic(self):
         assert WireGuardManager.suggest_policy_name("Site Alpha") == "Site Alpha GW"
 
@@ -422,7 +402,6 @@ class TestSuggestPolicyName:
 
 
 class TestAddSitePeer:
-
     def test_adds_peer(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
         peer = wg.add_site_peer(
@@ -444,7 +423,6 @@ class TestAddSitePeer:
 
 
 class TestDetectDrift:
-
     def _make_peer_and_client(self):
         peer = WireGuardPeer(
             uuid="peer_uuid_002",
@@ -475,7 +453,8 @@ class TestDetectDrift:
         peer, client = self._make_peer_and_client()
         client.endpoint = "198.51.100.1"  # old endpoint
         report = wg.detect_drift(
-            peer, client,
+            peer,
+            client,
             expected_endpoint="hub.example.invalid",
         )
         assert report.has_drift
@@ -504,7 +483,6 @@ class TestDetectDrift:
 
 
 class TestReconciliation:
-
     def test_no_changes_when_no_drift(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
         report = DriftReport(peer_desc="test", peer_ip="10.0.0.1")
@@ -584,7 +562,6 @@ class TestReconciliation:
 
 
 class TestDriftDataclasses:
-
     def test_drift_field_str(self):
         df = DriftField("endpoint", "correct", "wrong")
         assert "endpoint" in str(df)
