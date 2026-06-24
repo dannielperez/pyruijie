@@ -12,17 +12,16 @@ library is authoritative.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
-from typing import Iterable
 
 from pyruijie.exceptions import (
     RuijieWireGuardConflictError,
     RuijieWireGuardError,
 )
-from pyruijie.models import WireGuardPeer
 from pyruijie.wireguard import WireGuardManager
 
-from .exceptions import WorkflowError, WorkflowPrecheckError
+from .exceptions import WorkflowPrecheckError
 from .progress import NullProgressSink, ProgressEvent, ProgressSink
 
 
@@ -120,13 +119,9 @@ def add_hub_peers(
 
     for p in peer_list:
         if not p.peer_pubkey:
-            raise WorkflowPrecheckError(
-                f"peer '{p.desc}' ({p.interface_ip}) missing public key"
-            )
+            raise WorkflowPrecheckError(f"peer '{p.desc}' ({p.interface_ip}) missing public key")
         if not p.interface_ip:
-            raise WorkflowPrecheckError(
-                f"peer '{p.desc}' missing interface_ip"
-            )
+            raise WorkflowPrecheckError(f"peer '{p.desc}' missing interface_ip")
 
     hub_host = getattr(manager.client, "host", "?")
 
@@ -176,7 +171,8 @@ def add_hub_peers(
             skipped += 1
             sink.emit(
                 ProgressEvent(
-                    "info", "peer.exists",
+                    "info",
+                    "peer.exists",
                     f"{req.desc} ({req.interface_ip}): already on hub",
                     context={"desc": req.desc, "interface_ip": req.interface_ip},
                 )
@@ -193,7 +189,8 @@ def add_hub_peers(
             )
             sink.emit(
                 ProgressEvent(
-                    "info", "peer.planned",
+                    "info",
+                    "peer.planned",
                     f"[DRY-RUN] would add {req.desc} ({req.interface_ip})",
                     context={"desc": req.desc, "interface_ip": req.interface_ip},
                 )
@@ -220,7 +217,8 @@ def add_hub_peers(
             existing_ips.add(req.interface_ip)
             sink.emit(
                 ProgressEvent(
-                    "success", "peer.added",
+                    "success",
+                    "peer.added",
                     f"{req.desc} ({req.interface_ip}) added",
                     context={"desc": req.desc, "interface_ip": req.interface_ip},
                 )
@@ -237,7 +235,8 @@ def add_hub_peers(
             skipped += 1
             sink.emit(
                 ProgressEvent(
-                    "warning", "peer.conflict",
+                    "warning",
+                    "peer.conflict",
                     f"{req.desc} ({req.interface_ip}): {exc}",
                 )
             )
@@ -253,7 +252,8 @@ def add_hub_peers(
             failed += 1
             sink.emit(
                 ProgressEvent(
-                    "error", "peer.failed",
+                    "error",
+                    "peer.failed",
                     f"{req.desc} ({req.interface_ip}): {exc}",
                 )
             )

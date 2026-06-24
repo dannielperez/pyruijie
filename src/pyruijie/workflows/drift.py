@@ -10,17 +10,15 @@ any site and therefore has no ``apply`` flag.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
-from typing import Callable
 
 from pyruijie.exceptions import RuijieAuthError, RuijieWireGuardError
 from pyruijie.gateway import GatewayClient
 from pyruijie.models import WireGuardPeer
 from pyruijie.wireguard import DriftReport, WireGuardManager
 
-from .exceptions import WorkflowError
 from .progress import NullProgressSink, ProgressEvent, ProgressSink
-
 
 SiteClientFactory = Callable[[str], GatewayClient]
 """Callable that produces an authenticated :class:`GatewayClient` for
@@ -63,11 +61,7 @@ class DriftScanResult:
     @property
     def ok(self) -> bool:
         """No drift and no unreachable peers."""
-        return (
-            not self.error
-            and self.peers_in_drift == 0
-            and self.peers_unreachable == 0
-        )
+        return not self.error and self.peers_in_drift == 0 and self.peers_unreachable == 0
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -127,7 +121,8 @@ def detect_hub_drift(
 
     sink.emit(
         ProgressEvent(
-            "info", "workflow.start",
+            "info",
+            "workflow.start",
             f"Drift scan on {hub_host}: {len(peers)} peer(s) in scope",
             context={"hub_host": hub_host, "peers_in_scope": len(peers)},
         )
@@ -154,7 +149,8 @@ def detect_hub_drift(
             )
             sink.emit(
                 ProgressEvent(
-                    "warning", "peer.unreachable",
+                    "warning",
+                    "peer.unreachable",
                     f"{peer.desc} ({peer.ipaddr}): unreachable — {exc}",
                 )
             )
@@ -164,7 +160,9 @@ def detect_hub_drift(
             site_wg = WireGuardManager(site)
             client_policy = site_wg.get_client_policy()
             report = hub_manager.detect_drift(
-                peer, client_policy, expected_endpoint=expected_endpoint,
+                peer,
+                client_policy,
+                expected_endpoint=expected_endpoint,
             )
         except (RuijieAuthError, RuijieWireGuardError) as exc:
             unreachable += 1
@@ -179,7 +177,8 @@ def detect_hub_drift(
             )
             sink.emit(
                 ProgressEvent(
-                    "warning", "peer.query_failed",
+                    "warning",
+                    "peer.query_failed",
                     f"{peer.desc} ({peer.ipaddr}): {exc}",
                 )
             )
@@ -190,16 +189,17 @@ def detect_hub_drift(
             in_drift += 1
             sink.emit(
                 ProgressEvent(
-                    "warning", "peer.drift",
-                    f"{peer.desc} ({peer.ipaddr}): drift in "
-                    f"{', '.join(drift_fields)}",
+                    "warning",
+                    "peer.drift",
+                    f"{peer.desc} ({peer.ipaddr}): drift in {', '.join(drift_fields)}",
                     context={"peer_ip": peer.ipaddr, "fields": drift_fields},
                 )
             )
         else:
             sink.emit(
                 ProgressEvent(
-                    "success", "peer.in_sync",
+                    "success",
+                    "peer.in_sync",
                     f"{peer.desc} ({peer.ipaddr}): in sync",
                 )
             )
@@ -218,8 +218,7 @@ def detect_hub_drift(
         ProgressEvent(
             "success" if (unreachable == 0 and in_drift == 0) else "warning",
             "workflow.done",
-            f"Scan complete: drift={in_drift} unreachable={unreachable} "
-            f"total={len(peers)}",
+            f"Scan complete: drift={in_drift} unreachable={unreachable} total={len(peers)}",
         )
     )
 

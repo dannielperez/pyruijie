@@ -22,7 +22,7 @@ Secrets policy
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 
 from pyruijie.exceptions import (
     RuijieAuthError,
@@ -32,7 +32,7 @@ from pyruijie.exceptions import (
 from pyruijie.gateway import GatewayClient
 from pyruijie.wireguard import WireGuardManager
 
-from .exceptions import WorkflowError, WorkflowPrecheckError
+from .exceptions import WorkflowPrecheckError
 from .progress import NullProgressSink, ProgressEvent, ProgressSink
 
 
@@ -70,11 +70,7 @@ class SiteOnboardingResult:
     def success(self) -> bool:
         if self.error:
             return False
-        if self.hub_action == "failed":
-            return False
-        if self.site_action == "failed":
-            return False
-        return True
+        return self.hub_action != "failed" and self.site_action != "failed"
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -148,19 +144,16 @@ def onboard_site(
         raise WorkflowPrecheckError("site_name is required")
     if configure_site:
         if site_client is None:
-            raise WorkflowPrecheckError(
-                "configure_site=True requires site_client"
-            )
+            raise WorkflowPrecheckError("configure_site=True requires site_client")
         if not site_private_key:
-            raise WorkflowPrecheckError(
-                "configure_site=True requires site_private_key"
-            )
+            raise WorkflowPrecheckError("configure_site=True requires site_private_key")
 
     hub_host = getattr(hub_manager.client, "host", "?")
 
     sink.emit(
         ProgressEvent(
-            "info", "workflow.start",
+            "info",
+            "workflow.start",
             (
                 f"Onboarding '{site_name}' to hub {hub_host} "
                 f"({'DRY-RUN' if not apply else 'APPLY'})"
@@ -185,9 +178,7 @@ def onboard_site(
             error=f"get_server_policy failed: {exc}",
         )
 
-    if preferred_peer_ip and any(
-        p.ipaddr == preferred_peer_ip for p in server.peers
-    ):
+    if preferred_peer_ip and any(p.ipaddr == preferred_peer_ip for p in server.peers):
         peer_ip = preferred_peer_ip  # Existing — idempotent path below.
     else:
         try:
@@ -214,7 +205,8 @@ def onboard_site(
         hub_action = "already-exists"
         sink.emit(
             ProgressEvent(
-                "info", "hub.peer_exists",
+                "info",
+                "hub.peer_exists",
                 f"hub peer {peer_ip} already present as '{existing_peer.desc}'",
                 context={"peer_ip": peer_ip, "existing_desc": existing_peer.desc},
             )
@@ -223,7 +215,8 @@ def onboard_site(
         hub_action = "planned"
         sink.emit(
             ProgressEvent(
-                "info", "hub.peer_planned",
+                "info",
+                "hub.peer_planned",
                 f"[DRY-RUN] would add hub peer '{peer_desc}' ({peer_ip})",
                 context={"peer_ip": peer_ip, "peer_desc": peer_desc},
             )
@@ -240,7 +233,8 @@ def onboard_site(
             hub_action = "added"
             sink.emit(
                 ProgressEvent(
-                    "success", "hub.peer_added",
+                    "success",
+                    "hub.peer_added",
                     f"hub peer '{peer_desc}' ({peer_ip}) added",
                     context={"peer_ip": peer_ip, "peer_desc": peer_desc},
                 )
@@ -249,14 +243,13 @@ def onboard_site(
             hub_action = "already-exists"
             sink.emit(
                 ProgressEvent(
-                    "warning", "hub.peer_conflict",
+                    "warning",
+                    "hub.peer_conflict",
                     f"hub peer conflict: {exc}",
                 )
             )
         except RuijieWireGuardError as exc:
-            sink.emit(
-                ProgressEvent("error", "hub.peer_failed", f"hub add failed: {exc}")
-            )
+            sink.emit(ProgressEvent("error", "hub.peer_failed", f"hub add failed: {exc}"))
             return SiteOnboardingResult(
                 site_name=site_name,
                 hub_host=hub_host,
@@ -276,7 +269,8 @@ def onboard_site(
             site_action = "planned"
             sink.emit(
                 ProgressEvent(
-                    "info", "site.configure_planned",
+                    "info",
+                    "site.configure_planned",
                     f"[DRY-RUN] would configure site client policy on "
                     f"{getattr(site_client, 'host', '?')}",
                 )
@@ -297,16 +291,17 @@ def onboard_site(
                 site_action = "configured"
                 sink.emit(
                     ProgressEvent(
-                        "success", "site.configured",
-                        f"site client policy configured on "
-                        f"{getattr(site_client, 'host', '?')}",
+                        "success",
+                        "site.configured",
+                        f"site client policy configured on {getattr(site_client, 'host', '?')}",
                     )
                 )
             except (RuijieAuthError, RuijieWireGuardError) as exc:
                 site_action = "failed"
                 sink.emit(
                     ProgressEvent(
-                        "error", "site.configure_failed",
+                        "error",
+                        "site.configure_failed",
                         f"site configure failed: {exc}",
                     )
                 )
@@ -324,7 +319,8 @@ def onboard_site(
 
     sink.emit(
         ProgressEvent(
-            "success", "workflow.done",
+            "success",
+            "workflow.done",
             f"'{site_name}' → {peer_ip}: hub={hub_action} site={site_action}",
         )
     )

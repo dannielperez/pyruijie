@@ -9,16 +9,15 @@ same function.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, field
-from typing import Callable, Iterable
 
 from pyruijie.exceptions import RuijieAuthError, RuijieWireGuardError
 from pyruijie.gateway import GatewayClient
 from pyruijie.wireguard import WireGuardManager
 
-from .exceptions import WorkflowError, WorkflowPrecheckError
+from .exceptions import WorkflowPrecheckError
 from .progress import NullProgressSink, ProgressEvent, ProgressSink
-
 
 SiteClientFactory = Callable[[str], GatewayClient]
 """Returns an authenticated :class:`GatewayClient` for a site IP.
@@ -44,7 +43,7 @@ class EndpointUpdateOutcome:
     ip: str
     name: str
     status: str  # "updated" | "already-configured" | "planned" |
-                 # "wrong-old-endpoint" | "unreachable" | "failed"
+    # "wrong-old-endpoint" | "unreachable" | "failed"
     previous_endpoint: str = ""
     new_endpoint: str = ""
     error: str = ""
@@ -124,7 +123,8 @@ def update_site_endpoints(
 
     sink.emit(
         ProgressEvent(
-            "info", "workflow.start",
+            "info",
+            "workflow.start",
             f"Endpoint update on {len(target_list)} site(s) -> "
             f"{new_endpoint} ({'DRY-RUN' if not apply else 'APPLY'})",
             context={
@@ -146,14 +146,16 @@ def update_site_endpoints(
             unreachable += 1
             results.append(
                 EndpointUpdateOutcome(
-                    ip=tgt.ip, name=tgt.name,
+                    ip=tgt.ip,
+                    name=tgt.name,
                     status="unreachable",
                     error=f"site connect failed: {exc}",
                 )
             )
             sink.emit(
                 ProgressEvent(
-                    "warning", "site.unreachable",
+                    "warning",
+                    "site.unreachable",
                     f"{label}: unreachable — {exc}",
                 )
             )
@@ -166,14 +168,16 @@ def update_site_endpoints(
             unreachable += 1
             results.append(
                 EndpointUpdateOutcome(
-                    ip=tgt.ip, name=tgt.name,
+                    ip=tgt.ip,
+                    name=tgt.name,
                     status="unreachable",
                     error=str(exc),
                 )
             )
             sink.emit(
                 ProgressEvent(
-                    "warning", "site.query_failed",
+                    "warning",
+                    "site.query_failed",
                     f"{label}: {exc}",
                 )
             )
@@ -185,7 +189,8 @@ def update_site_endpoints(
             already += 1
             results.append(
                 EndpointUpdateOutcome(
-                    ip=tgt.ip, name=tgt.name,
+                    ip=tgt.ip,
+                    name=tgt.name,
                     status="already-configured",
                     previous_endpoint=current,
                     new_endpoint=new_endpoint,
@@ -193,7 +198,8 @@ def update_site_endpoints(
             )
             sink.emit(
                 ProgressEvent(
-                    "info", "site.already_configured",
+                    "info",
+                    "site.already_configured",
                     f"{label}: already on {new_endpoint}",
                 )
             )
@@ -203,21 +209,19 @@ def update_site_endpoints(
             failed += 1
             results.append(
                 EndpointUpdateOutcome(
-                    ip=tgt.ip, name=tgt.name,
+                    ip=tgt.ip,
+                    name=tgt.name,
                     status="wrong-old-endpoint",
                     previous_endpoint=current,
                     new_endpoint=new_endpoint,
-                    error=(
-                        f"current endpoint {current!r} != "
-                        f"expected {expected_old_endpoint!r}"
-                    ),
+                    error=(f"current endpoint {current!r} != expected {expected_old_endpoint!r}"),
                 )
             )
             sink.emit(
                 ProgressEvent(
-                    "warning", "site.unexpected_endpoint",
-                    f"{label}: current={current!r} != "
-                    f"expected={expected_old_endpoint!r}; skipped",
+                    "warning",
+                    "site.unexpected_endpoint",
+                    f"{label}: current={current!r} != expected={expected_old_endpoint!r}; skipped",
                 )
             )
             continue
@@ -225,7 +229,8 @@ def update_site_endpoints(
         if not apply:
             results.append(
                 EndpointUpdateOutcome(
-                    ip=tgt.ip, name=tgt.name,
+                    ip=tgt.ip,
+                    name=tgt.name,
                     status="planned",
                     previous_endpoint=current,
                     new_endpoint=new_endpoint,
@@ -233,7 +238,8 @@ def update_site_endpoints(
             )
             sink.emit(
                 ProgressEvent(
-                    "info", "site.planned",
+                    "info",
+                    "site.planned",
                     f"[DRY-RUN] {label}: {current} -> {new_endpoint}",
                 )
             )
@@ -244,7 +250,8 @@ def update_site_endpoints(
             updated += 1
             results.append(
                 EndpointUpdateOutcome(
-                    ip=tgt.ip, name=tgt.name,
+                    ip=tgt.ip,
+                    name=tgt.name,
                     status="updated",
                     previous_endpoint=current,
                     new_endpoint=new_endpoint,
@@ -252,7 +259,8 @@ def update_site_endpoints(
             )
             sink.emit(
                 ProgressEvent(
-                    "success", "site.updated",
+                    "success",
+                    "site.updated",
                     f"{label}: {current} -> {new_endpoint}",
                 )
             )
@@ -260,7 +268,8 @@ def update_site_endpoints(
             failed += 1
             results.append(
                 EndpointUpdateOutcome(
-                    ip=tgt.ip, name=tgt.name,
+                    ip=tgt.ip,
+                    name=tgt.name,
                     status="failed",
                     previous_endpoint=current,
                     new_endpoint=new_endpoint,
@@ -269,7 +278,8 @@ def update_site_endpoints(
             )
             sink.emit(
                 ProgressEvent(
-                    "error", "site.update_failed",
+                    "error",
+                    "site.update_failed",
                     f"{label}: {exc}",
                 )
             )
