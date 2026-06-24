@@ -5,7 +5,6 @@ from __future__ import annotations
 import uuid as _uuid
 from dataclasses import asdict, dataclass, field
 from ipaddress import IPv4Interface, IPv4Network, ip_interface, ip_network
-from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 

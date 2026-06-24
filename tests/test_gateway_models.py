@@ -15,12 +15,10 @@ from pyruijie.models import (
     validate_ipv4_network,
 )
 
-
 # ── WireGuardPeer ─────────────────────────────────────────────────────
 
 
 class TestWireGuardPeer:
-
     RAW = {
         "uuid": "peer_uuid_001",
         "desc": "Site Alpha",
@@ -94,7 +92,6 @@ class TestWireGuardPeer:
 
 
 class TestWireGuardServerPolicy:
-
     RAW = {
         "uuid": "server_uuid_001",
         "enable": "1",
@@ -168,7 +165,6 @@ class TestWireGuardServerPolicy:
 
 
 class TestWireGuardClientPolicy:
-
     RAW = {
         "uuid": "client_uuid_001",
         "enable": "1",
@@ -233,7 +229,6 @@ class TestWireGuardClientPolicy:
 
 
 class TestWireGuardConfigExport:
-
     CONF_TEXT = """\
 [Interface]
 PrivateKey = PRIVKEYxxTESTxxxxxxxxxxxxxxxxxxxxxxxxxxx0=
@@ -310,7 +305,6 @@ PresharedKey = PSK000003TESTxxxxxxxxxxxxxxxxxxxxxxxxxxx0=
 
 
 class TestValidation:
-
     def test_validate_ipv4_cidr(self):
         iface = validate_ipv4_cidr("10.100.0.105/32")
         assert str(iface.ip) == "10.100.0.105"
