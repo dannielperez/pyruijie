@@ -16,9 +16,10 @@ import argparse
 import json
 import os
 import sys
-from typing import Sequence
+from collections.abc import Sequence
 
 from .gateway import GatewayClient
+from .wireguard import WireGuardManager
 from .workflows import (
     ConsoleProgressSink,
     EndpointTarget,
@@ -30,7 +31,6 @@ from .workflows import (
     onboard_site,
     update_site_endpoints,
 )
-from .wireguard import WireGuardManager
 
 
 def _hub_credentials() -> tuple[str, str, str]:
@@ -72,21 +72,26 @@ def workflow_cli(argv: Sequence[str] | None = None) -> None:
         help="Add a new site peer to the hub (and optionally configure the site).",
     )
     ob.add_argument("--site-name", required=True)
-    ob.add_argument("--peer-pubkey", required=True,
-                    help="Site gateway's WireGuard public key.")
-    ob.add_argument("--site-network", required=True,
-                    help="Hub WG interface network CIDR for auto-allocation.")
+    ob.add_argument("--peer-pubkey", required=True, help="Site gateway's WireGuard public key.")
+    ob.add_argument(
+        "--site-network", required=True, help="Hub WG interface network CIDR for auto-allocation."
+    )
     ob.add_argument("--preferred-peer-ip", default=None)
     ob.add_argument("--server-uuid", default=None)
-    ob.add_argument("--psk", default="",
-                    help="Preshared key (never printed; passed through only).")
+    ob.add_argument(
+        "--psk", default="", help="Preshared key (never printed; passed through only)."
+    )
     ob.add_argument("--configure-site", action="store_true")
-    ob.add_argument("--site-ip", default=None,
-                    help="Site gateway IP, required with --configure-site.")
-    ob.add_argument("--site-privkey-env", default="UNIQUE_SITE_PRIVKEY",
-                    help="Env var name that holds the site private key "
-                         "(default: UNIQUE_SITE_PRIVKEY). Never accepted on "
-                         "the command line.")
+    ob.add_argument(
+        "--site-ip", default=None, help="Site gateway IP, required with --configure-site."
+    )
+    ob.add_argument(
+        "--site-privkey-env",
+        default="UNIQUE_SITE_PRIVKEY",
+        help="Env var name that holds the site private key "
+        "(default: UNIQUE_SITE_PRIVKEY). Never accepted on "
+        "the command line.",
+    )
     ob.add_argument("--site-policy-name", default="US_WG")
     ob.add_argument("--hub-endpoint", default=None)
     ob.add_argument("--hub-endpoint-port", default="51820")
@@ -115,8 +120,9 @@ def workflow_cli(argv: Sequence[str] | None = None) -> None:
     )
     dr.add_argument("--server-uuid", default=None)
     dr.add_argument("--expected-endpoint", default=None)
-    dr.add_argument("--peer-ip", action="append", default=None,
-                    help="Restrict to specific peer IP(s).")
+    dr.add_argument(
+        "--peer-ip", action="append", default=None, help="Restrict to specific peer IP(s)."
+    )
     dr.add_argument("--json", action="store_true")
     dr.add_argument("--quiet", action="store_true")
 
@@ -125,13 +131,14 @@ def workflow_cli(argv: Sequence[str] | None = None) -> None:
         help="Batch-update the hub endpoint on site gateways.",
     )
     ue.add_argument("--new-endpoint", required=True)
-    ue.add_argument("--expected-old-endpoint", default=None,
-                    help="Skip sites whose current endpoint doesn't match.")
+    ue.add_argument(
+        "--expected-old-endpoint",
+        default=None,
+        help="Skip sites whose current endpoint doesn't match.",
+    )
     ue.add_argument("--new-endpoint-port", default=None)
-    ue.add_argument("--target", action="append", default=[],
-                    help="Site gateway IP (repeatable).")
-    ue.add_argument("--from-file", default=None,
-                    help="JSON array of {ip, name} objects.")
+    ue.add_argument("--target", action="append", default=[], help="Site gateway IP (repeatable).")
+    ue.add_argument("--from-file", default=None, help="JSON array of {ip, name} objects.")
     ue.add_argument("--apply", action="store_true")
     ue.add_argument("--json", action="store_true")
     ue.add_argument("--quiet", action="store_true")
@@ -179,9 +186,7 @@ def _run_onboard_site(args: argparse.Namespace) -> None:
             _die("--configure-site requires --site-ip")
         site_private_key = os.environ.get(args.site_privkey_env, "")
         if not site_private_key:
-            _die(
-                f"--configure-site requires ${args.site_privkey_env} to be set"
-            )
+            _die(f"--configure-site requires ${args.site_privkey_env} to be set")
         user, pw = _site_credentials()
         if not pw:
             _die("UNIQUE_GW_PASSWORD is required for site login")
@@ -229,7 +234,8 @@ def _run_onboard_site(args: argparse.Namespace) -> None:
 def _run_add_peers(args: argparse.Namespace) -> None:
     sink = _mk_sink(args)
     try:
-        raw = json.loads(open(args.from_file, encoding="utf-8").read())
+        with open(args.from_file, encoding="utf-8") as f:
+            raw = json.loads(f.read())
     except OSError as exc:
         _die(f"cannot read {args.from_file}: {exc}")
     if not isinstance(raw, list):
@@ -316,7 +322,8 @@ def _run_update_endpoint(args: argparse.Namespace) -> None:
         targets.extend(EndpointTarget(ip=ip) for ip in args.target)
     if args.from_file:
         try:
-            raw = json.loads(open(args.from_file, encoding="utf-8").read())
+            with open(args.from_file, encoding="utf-8") as f:
+                raw = json.loads(f.read())
         except OSError as exc:
             _die(f"cannot read {args.from_file}: {exc}")
         if not isinstance(raw, list):

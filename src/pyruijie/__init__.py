@@ -1,5 +1,6 @@
 """pyruijie — Python client library for Ruijie/Reyee Cloud and Gateway management."""
 
+from pyruijie import workflows
 from pyruijie.client import DEFAULT_BASE_URL, RuijieClient
 from pyruijie.exceptions import (
     APIError,
@@ -27,7 +28,6 @@ from pyruijie.models import (
 )
 from pyruijie.utils import format_mac
 from pyruijie.wireguard import WireGuardManager
-from pyruijie import workflows
 
 __version__ = "0.4.0"
 

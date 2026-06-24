@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -20,37 +20,26 @@ from pyruijie.cli import (
 )
 from pyruijie.exceptions import (
     RuijieAuthError,
-    RuijieWireGuardConflictError,
-    RuijieWireGuardError,
 )
-from pyruijie.models import WireGuardClientPolicy, WireGuardPeer, WireGuardServerPolicy
-from pyruijie.wireguard import DriftReport, WireGuardManager
 
-from .conftest import MockGatewayClient, SAMPLE_CLIENT_POLICY, SAMPLE_SERVER_POLICY
-
+from .conftest import SAMPLE_CLIENT_POLICY, MockGatewayClient
 
 # ── Structured result model tests ─────────────────────────────────────
 
 
 class TestOnboardingResult:
     def test_success_summary(self):
-        r = OnboardingResult(
-            site_name="Test Site", success=True, peer_ip="10.254.250.50"
-        )
+        r = OnboardingResult(site_name="Test Site", success=True, peer_ip="10.254.250.50")
         assert "OK" in r.summary()
         assert "Test Site" in r.summary()
 
     def test_failure_summary(self):
-        r = OnboardingResult(
-            site_name="Bad Site", success=False, error="Connection refused"
-        )
+        r = OnboardingResult(site_name="Bad Site", success=False, error="Connection refused")
         assert "FAILED" in r.summary()
         assert "Connection refused" in r.summary()
 
     def test_dry_run_summary(self):
-        r = OnboardingResult(
-            site_name="DR Site", success=True, dry_run=True, peer_ip="10.1.1.1"
-        )
+        r = OnboardingResult(site_name="DR Site", success=True, dry_run=True, peer_ip="10.1.1.1")
         assert "DRY-RUN" in r.summary()
 
     def test_to_dict(self):
@@ -68,9 +57,7 @@ class TestOnboardingResult:
 
 class TestEndpointUpdateResult:
     def test_to_dict(self):
-        r = EndpointUpdateResult(
-            ip="10.1.1.1", name="TestGW", success=True, action="updated"
-        )
+        r = EndpointUpdateResult(ip="10.1.1.1", name="TestGW", success=True, action="updated")
         d = r.to_dict()
         assert d["ip"] == "10.1.1.1"
         assert d["success"] is True
@@ -80,8 +67,12 @@ class TestEndpointUpdateResult:
 class TestWireGuardSiteLink:
     def test_fields(self):
         link = WireGuardSiteLink(
-            host="10.200.0.1", role="hub", peer_ip="10.254.250.50",
-            pubkey="abc123==", policy_uuid="uuid-1", policy_name="US_WG"
+            host="10.200.0.1",
+            role="hub",
+            peer_ip="10.254.250.50",
+            pubkey="abc123==",
+            policy_uuid="uuid-1",
+            policy_name="US_WG",
         )
         assert link.role == "hub"
         assert link.peer_ip == "10.254.250.50"
@@ -108,23 +99,37 @@ class TestBuildParser:
 
     def test_peers_add(self):
         parser = build_parser()
-        args = parser.parse_args([
-            "peers", "add",
-            "--desc", "Test Site",
-            "--ip", "10.1.1.1",
-            "--pubkey", "abc123==",
-        ])
+        args = parser.parse_args(
+            [
+                "peers",
+                "add",
+                "--desc",
+                "Test Site",
+                "--ip",
+                "10.1.1.1",
+                "--pubkey",
+                "abc123==",
+            ]
+        )
         assert args.desc == "Test Site"
         assert args.ip == "10.1.1.1"
         assert args.pubkey == "abc123=="
 
     def test_peers_add_dry_run(self):
         parser = build_parser()
-        args = parser.parse_args([
-            "peers", "add",
-            "--desc", "Test", "--ip", "10.1.1.1", "--pubkey", "k==",
-            "--dry-run",
-        ])
+        args = parser.parse_args(
+            [
+                "peers",
+                "add",
+                "--desc",
+                "Test",
+                "--ip",
+                "10.1.1.1",
+                "--pubkey",
+                "k==",
+                "--dry-run",
+            ]
+        )
         assert args.dry_run is True
 
     def test_peers_remove(self):
@@ -144,10 +149,15 @@ class TestBuildParser:
 
     def test_update_endpoint(self):
         parser = build_parser()
-        args = parser.parse_args([
-            "update-endpoint", "10.1.1.1", "10.1.1.2",
-            "--new-endpoint", "example.com",
-        ])
+        args = parser.parse_args(
+            [
+                "update-endpoint",
+                "10.1.1.1",
+                "10.1.1.2",
+                "--new-endpoint",
+                "example.com",
+            ]
+        )
         assert args.targets == ["10.1.1.1", "10.1.1.2"]
         assert args.new_endpoint == "example.com"
 
@@ -163,33 +173,49 @@ class TestBuildParser:
 
     def test_onboard_site(self):
         parser = build_parser()
-        args = parser.parse_args([
-            "onboard-site",
-            "--site-name", "Test Site",
-            "--site-ip", "10.254.250.50",
-            "--pubkey", "abc123==",
-        ])
+        args = parser.parse_args(
+            [
+                "onboard-site",
+                "--site-name",
+                "Test Site",
+                "--site-ip",
+                "10.254.250.50",
+                "--pubkey",
+                "abc123==",
+            ]
+        )
         assert args.site_name == "Test Site"
         assert args.site_ip == "10.254.250.50"
         assert args.pubkey == "abc123=="
 
     def test_onboard_site_full(self):
         parser = build_parser()
-        args = parser.parse_args([
-            "onboard-site",
-            "--site-name", "Full Site",
-            "--site-ip", "10.254.250.60",
-            "--pubkey", "key==",
-            "--peer-ip", "10.254.250.60",
-            "--psk", "psk123==",
-            "--configure-site",
-            "--site-privkey", "privkey==",
-            "--hub-endpoint", "hub.example.com",
-            "--hub-port", "51821",
-            "--policy-name", "MY_WG",
-            "--dry-run",
-            "-y",
-        ])
+        args = parser.parse_args(
+            [
+                "onboard-site",
+                "--site-name",
+                "Full Site",
+                "--site-ip",
+                "10.254.250.60",
+                "--pubkey",
+                "key==",
+                "--peer-ip",
+                "10.254.250.60",
+                "--psk",
+                "psk123==",
+                "--configure-site",
+                "--site-privkey",
+                "privkey==",
+                "--hub-endpoint",
+                "hub.example.com",
+                "--hub-port",
+                "51821",
+                "--policy-name",
+                "MY_WG",
+                "--dry-run",
+                "-y",
+            ]
+        )
         assert args.configure_site is True
         assert args.site_privkey == "privkey=="
         assert args.hub_endpoint == "hub.example.com"
@@ -262,7 +288,7 @@ class TestPeersList:
 
         out = capsys.readouterr().out
         assert "Site Alpha" in out
-        assert "10.254.250.105" in out
+        assert "10.100.0.105" in out
         assert "Peers: 3" in out
 
     @patch("pyruijie.cli._connect_gateway")
@@ -291,13 +317,19 @@ class TestPeersAdd:
     def test_add_dry_run(self, mock_dotenv, mock_creds, mock_connect, capsys):
         mock_creds.return_value = ("10.200.0.1", "admin", "pass")
 
-        main([
-            "peers", "add",
-            "--desc", "New Site",
-            "--ip", "10.254.250.200",
-            "--pubkey", "NEWKEY==",
-            "--dry-run",
-        ])
+        main(
+            [
+                "peers",
+                "add",
+                "--desc",
+                "New Site",
+                "--ip",
+                "10.254.250.200",
+                "--pubkey",
+                "NEWKEY==",
+                "--dry-run",
+            ]
+        )
 
         out = capsys.readouterr().out
         assert "DRY-RUN" in out
@@ -313,13 +345,19 @@ class TestPeersAdd:
         gw = MockGatewayClient()
         mock_connect.return_value = gw
 
-        main([
-            "peers", "add",
-            "--desc", "New Site",
-            "--ip", "10.254.250.200",
-            "--pubkey", "NEWPUBKEY123==",
-            "-y",
-        ])
+        main(
+            [
+                "peers",
+                "add",
+                "--desc",
+                "New Site",
+                "--ip",
+                "10.254.250.200",
+                "--pubkey",
+                "NEWPUBKEY123==",
+                "-y",
+            ]
+        )
 
         out = capsys.readouterr().out
         assert "OK" in out
@@ -350,7 +388,7 @@ class TestPeersRemove:
         gw = MockGatewayClient()
         mock_connect.return_value = gw
 
-        main(["peers", "remove", "--ip", "10.254.250.105", "-y"])
+        main(["peers", "remove", "--ip", "10.100.0.105", "-y"])
 
         out = capsys.readouterr().out
         assert "OK" in out
@@ -385,7 +423,7 @@ class TestPeersRename:
         mock_connect.return_value = gw
 
         map_file = tmp_path / "rename_map.json"
-        map_file.write_text(json.dumps({"laptop-Danny": "Danny Laptop"}))
+        map_file.write_text(json.dumps({"laptop-user1": "Danny Laptop"}))
 
         main(["peers", "rename", str(map_file), "-y"])
 
@@ -418,12 +456,12 @@ class TestProbe:
 class TestUpdateEndpoint:
     def test_update_single_endpoint_already_configured(self):
         mock_gw = MockGatewayClient(host="10.254.250.105")
-        # The mock client policy has endpoint "67.203.206.66"
+        # The mock client policy has endpoint "198.51.100.1"
         with patch("pyruijie.cli._connect_gateway", return_value=mock_gw):
             r = _update_single_endpoint(
                 ip="10.254.250.105",
                 name="TestGW",
-                new_endpoint="67.203.206.66",
+                new_endpoint="198.51.100.1",
                 old_endpoint=None,
                 username="admin",
                 password="pass",
@@ -483,7 +521,7 @@ class TestUpdateEndpoint:
                 ip="10.254.250.105",
                 name="TestGW",
                 new_endpoint="new.endpoint.com",
-                old_endpoint="67.203.206.66",
+                old_endpoint="198.51.100.1",
                 username="admin",
                 password="pass",
                 dry_run=False,
@@ -504,14 +542,20 @@ class TestOnboardSite:
         hub_gw = MockGatewayClient()
         mock_connect.return_value = hub_gw
 
-        main([
-            "onboard-site",
-            "--site-name", "Test Site",
-            "--site-ip", "10.254.250.50",
-            "--pubkey", "TESTKEY==",
-            "--peer-ip", "10.254.250.200",
-            "--dry-run",
-        ])
+        main(
+            [
+                "onboard-site",
+                "--site-name",
+                "Test Site",
+                "--site-ip",
+                "10.254.250.50",
+                "--pubkey",
+                "TESTKEY==",
+                "--peer-ip",
+                "10.254.250.200",
+                "--dry-run",
+            ]
+        )
 
         out = capsys.readouterr().out
         assert "DRY-RUN" in out
@@ -525,14 +569,20 @@ class TestOnboardSite:
         hub_gw = MockGatewayClient()
         mock_connect.return_value = hub_gw
 
-        main([
-            "onboard-site",
-            "--site-name", "New Site",
-            "--site-ip", "10.254.250.50",
-            "--pubkey", "NEWSITEKEY==",
-            "--peer-ip", "10.254.250.200",
-            "-y",
-        ])
+        main(
+            [
+                "onboard-site",
+                "--site-name",
+                "New Site",
+                "--site-ip",
+                "10.254.250.50",
+                "--pubkey",
+                "NEWSITEKEY==",
+                "--peer-ip",
+                "10.254.250.200",
+                "-y",
+            ]
+        )
 
         out = capsys.readouterr().out
         assert "OK" in out
@@ -547,14 +597,20 @@ class TestOnboardSite:
         mock_connect.return_value = hub_gw
 
         # Use an IP that already exists in the mock
-        main([
-            "onboard-site",
-            "--site-name", "Existing",
-            "--site-ip", "10.254.250.50",
-            "--pubkey", "KEY==",
-            "--peer-ip", "10.254.250.105",
-            "-y",
-        ])
+        main(
+            [
+                "onboard-site",
+                "--site-name",
+                "Existing",
+                "--site-ip",
+                "10.254.250.50",
+                "--pubkey",
+                "KEY==",
+                "--peer-ip",
+                "10.100.0.105",
+                "-y",
+            ]
+        )
 
         out = capsys.readouterr().out
         assert "already exists" in out
@@ -562,22 +618,31 @@ class TestOnboardSite:
     @patch("pyruijie.cli._connect_gateway")
     @patch("pyruijie.cli._hub_credentials")
     @patch("pyruijie.cli._load_dotenv")
-    def test_onboard_with_output_file(self, mock_dotenv, mock_creds, mock_connect, capsys, tmp_path):
+    def test_onboard_with_output_file(
+        self, mock_dotenv, mock_creds, mock_connect, capsys, tmp_path
+    ):
         mock_creds.return_value = ("10.200.0.1", "admin", "pass")
         hub_gw = MockGatewayClient()
         mock_connect.return_value = hub_gw
 
         out_file = tmp_path / "result.json"
 
-        main([
-            "onboard-site",
-            "--site-name", "Output Test",
-            "--site-ip", "10.254.250.50",
-            "--pubkey", "KEY==",
-            "--peer-ip", "10.254.250.201",
-            "-y",
-            "-o", str(out_file),
-        ])
+        main(
+            [
+                "onboard-site",
+                "--site-name",
+                "Output Test",
+                "--site-ip",
+                "10.254.250.50",
+                "--pubkey",
+                "KEY==",
+                "--peer-ip",
+                "10.254.250.201",
+                "-y",
+                "-o",
+                str(out_file),
+            ]
+        )
 
         assert out_file.exists()
         result = json.loads(out_file.read_text())
@@ -594,14 +659,20 @@ class TestOnboardSite:
 
         # Try to add a peer with an IP that already exists (different pubkey)
         # The WireGuardManager.add_site_peer will check for conflicts
-        main([
-            "onboard-site",
-            "--site-name", "Conflict Site",
-            "--site-ip", "10.254.250.50",
-            "--pubkey", "DIFFERENTKEY==",
-            "--peer-ip", "10.254.250.105",
-            "-y",
-        ])
+        main(
+            [
+                "onboard-site",
+                "--site-name",
+                "Conflict Site",
+                "--site-ip",
+                "10.254.250.50",
+                "--pubkey",
+                "DIFFERENTKEY==",
+                "--peer-ip",
+                "10.100.0.105",
+                "-y",
+            ]
+        )
 
         out = capsys.readouterr().out
         # Should be handled gracefully — the peer already exists
@@ -634,7 +705,7 @@ class TestDrift:
 
         mock_connect.side_effect = connect_side_effect
 
-        main(["drift", "--peer-ip", "10.254.250.105"])
+        main(["drift", "--peer-ip", "10.100.0.105"])
 
         out = capsys.readouterr().out
         assert "1 peers checked" in out
@@ -674,8 +745,10 @@ class TestMainEntry:
     @patch("pyruijie.cli._load_dotenv")
     def test_env_file_flag(self, mock_dotenv):
         mock_creds = ("10.200.0.1", "admin", "pass")
-        with patch("pyruijie.cli._hub_credentials", return_value=mock_creds), \
-             patch("pyruijie.cli._connect_gateway", return_value=MockGatewayClient()):
+        with (
+            patch("pyruijie.cli._hub_credentials", return_value=mock_creds),
+            patch("pyruijie.cli._connect_gateway", return_value=MockGatewayClient()),
+        ):
             main(["--env-file", "/tmp/test.env", "peers", "list"])
         # _load_dotenv called twice: once in main() with Path, once from cmd
         # The explicit env-file path should be used
@@ -687,23 +760,24 @@ class TestMainEntry:
 class TestConfirm:
     def test_confirm_yes(self):
         from pyruijie.cli import _confirm
+
         with patch("builtins.input", return_value="y"):
             _confirm("test?")  # Should not raise
 
     def test_confirm_no_exits(self):
         from pyruijie.cli import _confirm
-        with patch("builtins.input", return_value="n"), \
-             pytest.raises(SystemExit):
+
+        with patch("builtins.input", return_value="n"), pytest.raises(SystemExit):
             _confirm("test?")
 
     def test_confirm_eof_exits(self):
         from pyruijie.cli import _confirm
-        with patch("builtins.input", side_effect=EOFError), \
-             pytest.raises(SystemExit):
+
+        with patch("builtins.input", side_effect=EOFError), pytest.raises(SystemExit):
             _confirm("test?")
 
     def test_confirm_keyboard_interrupt_exits(self):
         from pyruijie.cli import _confirm
-        with patch("builtins.input", side_effect=KeyboardInterrupt), \
-             pytest.raises(SystemExit):
+
+        with patch("builtins.input", side_effect=KeyboardInterrupt), pytest.raises(SystemExit):
             _confirm("test?")

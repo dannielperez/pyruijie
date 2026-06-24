@@ -16,16 +16,13 @@ import os
 import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
 
 from pyruijie.exceptions import (
     RuijieAuthError,
     RuijieWireGuardConflictError,
     RuijieWireGuardError,
-    RuijieWireGuardValidationError,
 )
 from pyruijie.gateway import GatewayClient
-from pyruijie.models import WireGuardClientPolicy, WireGuardPeer, WireGuardServerPolicy
 from pyruijie.wireguard import DriftReport, WireGuardManager
 
 logger = logging.getLogger(__name__)
@@ -294,7 +291,13 @@ def cmd_update_endpoint(args: argparse.Namespace) -> None:
     elif args.from_file:
         data = json.loads(Path(args.from_file).read_text())
         if isinstance(data, list):
-            targets = [{"ip": d.get("ip", d.get("interface_ip", "")), "name": d.get("name", d.get("username", ""))} for d in data]
+            targets = [
+                {
+                    "ip": d.get("ip", d.get("interface_ip", "")),
+                    "name": d.get("name", d.get("username", "")),
+                }
+                for d in data
+            ]
         else:
             _die("--from-file must contain a JSON array")
     else:
@@ -363,7 +366,9 @@ def _update_single_endpoint(
 
     if old_endpoint and policy.endpoint != old_endpoint:
         return EndpointUpdateResult(
-            ip=ip, name=name, success=False,
+            ip=ip,
+            name=name,
+            success=False,
             error=f"Unexpected endpoint: {policy.endpoint}",
         )
 
@@ -442,9 +447,7 @@ def cmd_onboard_site(args: argparse.Namespace) -> None:
                 server.local_addr.split("/")[0].rsplit(".", 1)[-1],
                 "0",
             )
-            peer_ip = hub_wg.allocate_next_peer_ip(
-                network, args.server_uuid
-            )
+            peer_ip = hub_wg.allocate_next_peer_ip(network, args.server_uuid)
 
         result.peer_ip = peer_ip
         desc = hub_wg.suggest_policy_name(args.site_name, "GW")
@@ -563,11 +566,15 @@ def build_parser() -> argparse.ArgumentParser:
         description="WireGuard VPN management for Ruijie/Reyee gateways",
     )
     parser.add_argument(
-        "-v", "--verbose", action="store_true",
+        "-v",
+        "--verbose",
+        action="store_true",
         help="Enable debug logging",
     )
     parser.add_argument(
-        "--env-file", type=str, default=None,
+        "--env-file",
+        type=str,
+        default=None,
         help="Path to .env file (default: auto-detect)",
     )
 
@@ -641,10 +648,16 @@ def build_parser() -> argparse.ArgumentParser:
     ob.add_argument("--peer-ip", default=None, help="VPN IP (auto-allocate if omitted)")
     ob.add_argument("--psk", default=None, help="Pre-shared key")
     ob.add_argument("--server-uuid", default=None)
-    ob.add_argument("--configure-site", action="store_true",
-                    help="Also configure the WireGuard client policy on the site gateway")
-    ob.add_argument("--site-privkey", default=None,
-                    help="Site gateway WireGuard private key (required with --configure-site)")
+    ob.add_argument(
+        "--configure-site",
+        action="store_true",
+        help="Also configure the WireGuard client policy on the site gateway",
+    )
+    ob.add_argument(
+        "--site-privkey",
+        default=None,
+        help="Site gateway WireGuard private key (required with --configure-site)",
+    )
     ob.add_argument("--hub-endpoint", default=None, help="Hub endpoint (IP or domain)")
     ob.add_argument("--hub-port", default="51820", help="Hub WireGuard port")
     ob.add_argument("--policy-name", default=None, help="Client policy name (default: US_WG)")
