@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
-from pyruijie.gateway import GatewayClient
 from pyruijie.exceptions import RuijieApiError, RuijieAuthError
+from pyruijie.gateway import GatewayClient
 
 
 @pytest.fixture
@@ -17,7 +17,6 @@ def client():
 
 
 class TestGatewayClientInit:
-
     def test_defaults(self, client: GatewayClient):
         assert client.host == "192.168.1.1"
         assert client.username == "admin"
@@ -29,12 +28,9 @@ class TestGatewayClientInit:
 
 
 class TestGatewayClientLogin:
-
     def test_login_success(self, client: GatewayClient):
         mock_resp = MagicMock()
-        mock_resp.json.return_value = {
-            "data": {"sid": "abc123", "sn": "SERN0000000001"}
-        }
+        mock_resp.json.return_value = {"data": {"sid": "abc123", "sn": "SERN0000000001"}}
         mock_resp.raise_for_status = MagicMock()
 
         with patch.object(client._session, "post", return_value=mock_resp):
@@ -49,20 +45,21 @@ class TestGatewayClientLogin:
         mock_resp.json.return_value = {"error": "bad password"}
         mock_resp.raise_for_status = MagicMock()
 
-        with patch.object(client._session, "post", return_value=mock_resp):
-            with pytest.raises(RuijieAuthError, match="Login failed"):
-                client.login()
+        with (
+            patch.object(client._session, "post", return_value=mock_resp),
+            pytest.raises(RuijieAuthError, match="Login failed"),
+        ):
+            client.login()
 
     def test_login_connection_error(self, client: GatewayClient):
-        with patch.object(
-            client._session, "post", side_effect=requests.ConnectionError("refused")
+        with (
+            patch.object(client._session, "post", side_effect=requests.ConnectionError("refused")),
+            pytest.raises(RuijieAuthError, match="Login request failed"),
         ):
-            with pytest.raises(RuijieAuthError, match="Login request failed"):
-                client.login()
+            client.login()
 
 
 class TestGatewayClientCmd:
-
     def test_cmd_requires_auth(self, client: GatewayClient):
         with pytest.raises(RuijieAuthError, match="Not authenticated"):
             client.cmd("devSta.get", "wireguard")
@@ -100,13 +97,10 @@ class TestGatewayClientCmd:
 
 
 class TestGatewayClientCmdChecked:
-
     def test_cmd_checked_success(self, client: GatewayClient):
         client._sid = "fake_sid"
         mock_resp = MagicMock()
-        mock_resp.json.return_value = {
-            "data": {"rcode": "00000000", "message": "Success"}
-        }
+        mock_resp.json.return_value = {"data": {"rcode": "00000000", "message": "Success"}}
         mock_resp.raise_for_status = MagicMock()
 
         with patch.object(client._session, "post", return_value=mock_resp):
@@ -122,9 +116,11 @@ class TestGatewayClientCmdChecked:
         }
         mock_resp.raise_for_status = MagicMock()
 
-        with patch.object(client._session, "post", return_value=mock_resp):
-            with pytest.raises(RuijieApiError, match="Invalid parameters"):
-                client.cmd_checked("devConfig.update", "wireguard")
+        with (
+            patch.object(client._session, "post", return_value=mock_resp),
+            pytest.raises(RuijieApiError, match="Invalid parameters"),
+        ):
+            client.cmd_checked("devConfig.update", "wireguard")
 
     def test_cmd_checked_timeout_treated_as_success(self, client: GatewayClient):
         client._sid = "fake_sid"
@@ -140,15 +136,16 @@ class TestGatewayClientCmdChecked:
 
 
 class TestGatewayClientContextManager:
-
     def test_context_manager(self, client: GatewayClient):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"data": {"sid": "ctx_sid"}}
         mock_resp.raise_for_status = MagicMock()
 
-        with patch.object(client._session, "post", return_value=mock_resp):
-            with patch.object(client, "close") as mock_close:
-                with client as gw:
-                    assert gw.sid == "ctx_sid"
+        with (
+            patch.object(client._session, "post", return_value=mock_resp),
+            patch.object(client, "close") as mock_close,
+        ):
+            with client as gw:
+                assert gw.sid == "ctx_sid"
 
-                mock_close.assert_called_once()
+            mock_close.assert_called_once()

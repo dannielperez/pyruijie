@@ -20,22 +20,18 @@ API Notes (reverse-engineered):
 
 from __future__ import annotations
 
-import copy
 import ipaddress
 import logging
 import uuid as _uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-import requests
-
-from pyruijie.gateway import GatewayClient
 from pyruijie.exceptions import (
-    RuijieApiError,
     RuijieWireGuardConflictError,
     RuijieWireGuardError,
     RuijieWireGuardValidationError,
 )
+from pyruijie.gateway import GatewayClient
 from pyruijie.models import (
     WireGuardClientPolicy,
     WireGuardConfigExport,
@@ -246,9 +242,7 @@ class WireGuardManager:
 
         # Check for conflicts
         if policy.find_peer(ip=peer.ipaddr):
-            raise RuijieWireGuardConflictError(
-                f"Peer with IP {peer.ipaddr} already exists"
-            )
+            raise RuijieWireGuardConflictError(f"Peer with IP {peer.ipaddr} already exists")
         if policy.find_peer(pubkey=peer.peer_pubkey):
             raise RuijieWireGuardConflictError(
                 f"Peer with public key {peer.peer_pubkey[:20]}... already exists"
@@ -278,9 +272,7 @@ class WireGuardManager:
 
         for peer in peers:
             if peer.ipaddr in existing_ips:
-                raise RuijieWireGuardConflictError(
-                    f"Peer with IP {peer.ipaddr} already exists"
-                )
+                raise RuijieWireGuardConflictError(f"Peer with IP {peer.ipaddr} already exists")
             if peer.peer_pubkey in existing_keys:
                 raise RuijieWireGuardConflictError(
                     f"Peer with public key {peer.peer_pubkey[:20]}... already exists"
@@ -315,11 +307,11 @@ class WireGuardManager:
         found = False
         for i, existing in enumerate(policy.peers):
             match = False
-            if match_by == "uuid" and existing.uuid == peer.uuid:
-                match = True
-            elif match_by == "ip" and existing.ipaddr == peer.ipaddr:
-                match = True
-            elif match_by == "pubkey" and existing.peer_pubkey == peer.peer_pubkey:
+            if (
+                (match_by == "uuid" and existing.uuid == peer.uuid)
+                or (match_by == "ip" and existing.ipaddr == peer.ipaddr)
+                or (match_by == "pubkey" and existing.peer_pubkey == peer.peer_pubkey)
+            ):
                 match = True
 
             if match:
@@ -349,7 +341,8 @@ class WireGuardManager:
         original_count = len(policy.peers)
 
         policy.peers = [
-            p for p in policy.peers
+            p
+            for p in policy.peers
             if not (
                 (ip and p.ipaddr == ip)
                 or (pubkey and p.peer_pubkey == pubkey)
@@ -533,9 +526,8 @@ class WireGuardManager:
         """
         net = ipaddress.ip_network(network, strict=False)
 
-        if preferred and preferred not in used_ips:
-            if ipaddress.ip_address(preferred) in net:
-                return preferred
+        if preferred and preferred not in used_ips and ipaddress.ip_address(preferred) in net:
+            return preferred
 
         for host in net.hosts():
             ip_str = str(host)
@@ -728,36 +720,47 @@ class WireGuardManager:
         # Interface IP: peer.ipaddr should match client localAddr (minus /32)
         client_ip = client_policy.local_addr.split("/")[0]
         if peer.ipaddr != client_ip:
-            report.drifts.append(DriftField(
-                field="interface_ip",
-                expected=peer.ipaddr,
-                actual=client_ip,
-            ))
+            report.drifts.append(
+                DriftField(
+                    field="interface_ip",
+                    expected=peer.ipaddr,
+                    actual=client_ip,
+                )
+            )
 
         # Public key: peer should have the client's public key
         if peer.peer_pubkey != client_policy.local_pubkey:
-            report.drifts.append(DriftField(
-                field="peer_pubkey",
-                expected=client_policy.local_pubkey,
-                actual=peer.peer_pubkey,
-            ))
+            report.drifts.append(
+                DriftField(
+                    field="peer_pubkey",
+                    expected=client_policy.local_pubkey,
+                    actual=peer.peer_pubkey,
+                )
+            )
 
         # Preshared key
-        if peer.preshared_key and client_policy.preshared_key:
-            if peer.preshared_key != client_policy.preshared_key:
-                report.drifts.append(DriftField(
+        if (
+            peer.preshared_key
+            and client_policy.preshared_key
+            and peer.preshared_key != client_policy.preshared_key
+        ):
+            report.drifts.append(
+                DriftField(
                     field="preshared_key",
                     expected=peer.preshared_key,
                     actual=client_policy.preshared_key,
-                ))
+                )
+            )
 
         # Endpoint check (if expected is provided)
         if expected_endpoint and client_policy.endpoint != expected_endpoint:
-            report.drifts.append(DriftField(
-                field="endpoint",
-                expected=expected_endpoint,
-                actual=client_policy.endpoint,
-            ))
+            report.drifts.append(
+                DriftField(
+                    field="endpoint",
+                    expected=expected_endpoint,
+                    actual=client_policy.endpoint,
+                )
+            )
 
         return report
 
@@ -826,18 +829,14 @@ class WireGuardManager:
         if plan.hub_updates:
             peer = self.get_peer(ip=plan.peer_ip, server_uuid=server_uuid)
             if not peer:
-                raise RuijieWireGuardError(
-                    f"Hub peer {plan.peer_ip} not found for reconciliation"
-                )
+                raise RuijieWireGuardError(f"Hub peer {plan.peer_ip} not found for reconciliation")
             for field_name, value in plan.hub_updates.items():
                 setattr(peer, field_name, value)
             self.update_peer(peer, match_by="ip", server_uuid=server_uuid)
 
         if plan.site_updates:
             if not site_client:
-                raise RuijieWireGuardError(
-                    "site_client required to apply site-side updates"
-                )
+                raise RuijieWireGuardError("site_client required to apply site-side updates")
             site_wg = WireGuardManager(site_client)
             policy = site_wg.get_client_policy()
             for field_name, value in plan.site_updates.items():
