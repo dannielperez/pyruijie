@@ -134,12 +134,14 @@ class MockGatewayClient:
         timeout: int | None = None,
         device: str = "pc",
     ) -> dict[str, Any]:
-        self.calls.append({
-            "method": method,
-            "module": module,
-            "data": data,
-            "timeout": timeout,
-        })
+        self.calls.append(
+            {
+                "method": method,
+                "module": module,
+                "data": data,
+                "timeout": timeout,
+            }
+        )
 
         if method == "devSta.get" and module == "wireguard":
             getype = (data or {}).get("getype", "0")
@@ -164,14 +166,10 @@ class MockGatewayClient:
                 self._client_policy = copy.deepcopy(data)
             elif data and data.get("type") == "1":
                 self._server_policy = copy.deepcopy(data)
-            return {
-                "data": {"rcode": "00000000", "message": "Success configuration"}
-            }
+            return {"data": {"rcode": "00000000", "message": "Success configuration"}}
 
         if method == "devConfig.del":
-            return {
-                "data": {"rcode": "00000000", "message": "Success configuration"}
-            }
+            return {"data": {"rcode": "00000000", "message": "Success configuration"}}
 
         return {"data": {}}
 
