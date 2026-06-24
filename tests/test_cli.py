@@ -438,7 +438,9 @@ class TestPeersRename:
 class TestProbe:
     @patch("pyruijie.cli._connect_gateway")
     @patch("pyruijie.cli._load_dotenv")
-    def test_probe_text(self, mock_dotenv, mock_connect, capsys):
+    def test_probe_text(self, mock_dotenv, mock_connect, capsys, monkeypatch):
+        # cmd_probe reads the gateway password from the environment directly.
+        monkeypatch.setenv("UNIQUE_GW_PASSWORD", "pass")
         gw = MockGatewayClient(host="10.0.0.105")
         gw.serial_number = "GW123456"
         mock_connect.return_value = gw
