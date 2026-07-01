@@ -41,3 +41,15 @@ placeholders (RFC 5737 / RFC 1918); substitute your own.
 - `detect_dual_wan(sn)` → `(#wan_ports, #wan_up, ips)`.
 - `site_connectivity(site)` — composite status that does not rely solely on the
   stale `connectStatus` field.
+
+## Self-hosted controller (RG-OCE / MACC-private)
+
+- Ruijie's self-hosted controller edition (RG-OCE / MACC-private) exposes the **same
+  `/service/api/` OpenAPI** as the hosted cloud, so `pyruijie` targets it with a
+  `base_url` change plus, if needed, an `auth_token` override — not a new transport.
+  See [`ONPREM_OCE.md`](ONPREM_OCE.md).
+- The hosted cloud requires a fixed `token` query param on the OAuth call. It is sent
+  by default (`DEFAULT_AUTH_TOKEN`); a self-hosted controller may use a different token
+  or none (`auth_token=None`). If on-prem auth fails, check this first.
+- API compatibility is **deployment-specific** — verify `authenticate()` then
+  `get_projects()` against your own instance before relying on it.

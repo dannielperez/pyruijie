@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Self-hosted controller support (RG-OCE / MACC-private)** — `RuijieClient` now
+  accepts an `auth_token` parameter (default: the hosted-cloud gateway token, exported
+  as `DEFAULT_AUTH_TOKEN`). Pass a deployment-specific token, or `None` to omit it, when
+  pointing `base_url` at a self-hosted Ruijie controller, which exposes the same
+  `/service/api/` OpenAPI. Backward compatible — the default reproduces the previous
+  hosted-cloud behavior exactly. See `docs/ONPREM_OCE.md`.
+
 ## [0.5.0]
 
 ### Changed

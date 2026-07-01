@@ -2,8 +2,9 @@
 
 import httpx
 import pytest
+import respx
 
-from pyruijie import RuijieClient
+from pyruijie import DEFAULT_AUTH_TOKEN, RuijieClient
 from pyruijie.client import _sanitize_url
 from pyruijie.exceptions import APIError, AuthenticationError
 
@@ -52,6 +53,44 @@ class TestAuthenticate:
         assert not client.is_authenticated
         client.get_projects()
         assert client.is_authenticated
+
+    def test_default_auth_token_sent(self, mock_api):
+        route = mock_api.post("/service/api/oauth20/client/access_token").respond(
+            json={"code": 0, "accessToken": "tok"}
+        )
+        RuijieClient(app_id="a", app_secret="s").authenticate()
+
+        assert route.calls.last.request.url.params.get("token") == DEFAULT_AUTH_TOKEN
+
+    def test_custom_auth_token_sent(self, mock_api):
+        route = mock_api.post("/service/api/oauth20/client/access_token").respond(
+            json={"code": 0, "accessToken": "tok"}
+        )
+        RuijieClient(app_id="a", app_secret="s", auth_token="onprem-token").authenticate()
+
+        assert route.calls.last.request.url.params.get("token") == "onprem-token"
+
+    def test_auth_token_none_omitted(self, mock_api):
+        route = mock_api.post("/service/api/oauth20/client/access_token").respond(
+            json={"code": 0, "accessToken": "tok"}
+        )
+        RuijieClient(app_id="a", app_secret="s", auth_token=None).authenticate()
+
+        assert "token" not in route.calls.last.request.url.params
+
+    def test_self_hosted_oce_base_url(self):
+        """A self-hosted RG-OCE / MACC-private host is targetable via base_url."""
+        oce_url = "https://oce.example.test"
+        with respx.mock(base_url=oce_url) as router:
+            route = router.post("/service/api/oauth20/client/access_token").respond(
+                json={"code": 0, "accessToken": "oce-tok"}
+            )
+            client = RuijieClient(app_id="a", app_secret="s", base_url=oce_url, auth_token=None)
+            token = client.authenticate()
+
+        assert token == "oce-tok"
+        assert client.base_url == oce_url
+        assert str(route.calls.last.request.url).startswith(oce_url)
 
 
 # -- get_projects tests --------------------------------------------------------

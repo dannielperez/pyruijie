@@ -1,7 +1,7 @@
 """pyruijie — Python client library for Ruijie/Reyee Cloud and Gateway management."""
 
 from pyruijie import workflows
-from pyruijie.client import DEFAULT_BASE_URL, RuijieClient
+from pyruijie.client import DEFAULT_AUTH_TOKEN, DEFAULT_BASE_URL, RuijieClient
 from pyruijie.exceptions import (
     APIError,
     AuthenticationError,
@@ -33,6 +33,7 @@ __version__ = "0.5.0"
 
 __all__ = [
     # Cloud API
+    "DEFAULT_AUTH_TOKEN",
     "DEFAULT_BASE_URL",
     "RuijieClient",
     "APIError",
