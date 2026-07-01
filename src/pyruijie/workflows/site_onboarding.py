@@ -1,8 +1,8 @@
 """Site-onboarding workflow: attach a new site to the WireGuard hub.
 
 Formalises the logic from ``pyruijie.cli.cmd_onboard_site`` into a
-progress-streaming, frozen-result function callable from the UniqueOS
-GUI, scheduled jobs, or the new ``pyruijie workflow`` CLI.
+progress-streaming, frozen-result function callable from a host
+application's GUI, scheduled jobs, or the ``pyruijie workflow`` CLI.
 
 Two modes:
 
