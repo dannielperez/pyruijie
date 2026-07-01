@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0]
+
+### Changed
+
+- **BREAKING: CLI credential env vars renamed** from `UNIQUE_GW_IP` /
+  `UNIQUE_GW_USERNAME` / `UNIQUE_GW_PASSWORD` / `UNIQUE_HUB_HOST` /
+  `UNIQUE_SITE_PRIVKEY` to `RUIJIE_GW_IP` / `RUIJIE_GW_USERNAME` /
+  `RUIJIE_GW_PASSWORD` / `RUIJIE_HUB_HOST` / `RUIJIE_SITE_PRIVKEY`. The legacy
+  `R_USCC_GW_*` / `R_HUB_HOST` fallbacks have been removed. Update your `.env`
+  files and job configs accordingly.
+- Default WireGuard client policy name changed from `WG_CLIENT` to `WG_CLIENT`.
+- Documentation genericized for public release (removed internal
+  deployment-specific references and example infrastructure).
+
 ## [0.2.0] — 2026-04-15
 
 ### Added
@@ -20,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`ClientDevice` WiFi/traffic fields** — `flow_up`, `flow_down`, `band`,
   `rssi`, `channel` now modeled from the API response (Section 3.0).
 - **Integration-pattern test suite** (`test_integration_patterns.py`) — tests
-  mirroring exact downstream application usage: `model_dump(by_alias=True)` alias
+  mirroring common consumer usage: `model_dump(by_alias=True)` alias
   stability, exception hierarchy, client init kwargs, discovery provider
   flow, device import flow, and `format_mac` compatibility.
 - Comprehensive Args/Returns/Raises docstrings for all public client methods.
