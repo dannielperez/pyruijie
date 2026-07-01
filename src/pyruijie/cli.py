@@ -104,16 +104,15 @@ def _load_dotenv(env_file: Path | None = None) -> None:
 def _hub_credentials() -> tuple[str, str, str]:
     """Return (host, username, password) for the hub gateway from env.
 
-    Reads UNIQUE_GW_IP / UNIQUE_GW_USERNAME / UNIQUE_GW_PASSWORD.
-    Falls back to legacy R_USCC_GW_* names for backwards compatibility.
+    Reads RUIJIE_GW_IP / RUIJIE_GW_USERNAME / RUIJIE_GW_PASSWORD.
     """
-    host = os.environ.get("UNIQUE_GW_IP") or os.environ.get("R_USCC_GW_IP", "")
-    user = os.environ.get("UNIQUE_GW_USERNAME") or os.environ.get("R_USCC_GW_USERNAME", "admin")
-    pw = os.environ.get("UNIQUE_GW_PASSWORD") or os.environ.get("R_USCC_GW_PASSWORD", "")
+    host = os.environ.get("RUIJIE_GW_IP", "")
+    user = os.environ.get("RUIJIE_GW_USERNAME", "admin")
+    pw = os.environ.get("RUIJIE_GW_PASSWORD", "")
     if not host:
-        _die("UNIQUE_GW_IP not set (hub gateway IP)")
+        _die("RUIJIE_GW_IP not set (hub gateway IP)")
     if not pw:
-        _die("UNIQUE_GW_PASSWORD not set")
+        _die("RUIJIE_GW_PASSWORD not set")
     return host, user, pw
 
 
@@ -232,10 +231,10 @@ def cmd_peers_rename(args: argparse.Namespace) -> None:
 def cmd_probe(args: argparse.Namespace) -> None:
     """Probe a site gateway's WireGuard configuration."""
     _load_dotenv()
-    user = os.environ.get("UNIQUE_GW_USERNAME") or os.environ.get("R_USCC_GW_USERNAME", "admin")
-    pw = os.environ.get("UNIQUE_GW_PASSWORD") or os.environ.get("R_USCC_GW_PASSWORD", "")
+    user = os.environ.get("RUIJIE_GW_USERNAME", "admin")
+    pw = os.environ.get("RUIJIE_GW_PASSWORD", "")
     if not pw:
-        _die("UNIQUE_GW_PASSWORD not set")
+        _die("RUIJIE_GW_PASSWORD not set")
 
     gw = _connect_gateway(args.ip, user, pw)
     wg = WireGuardManager(gw)
@@ -280,10 +279,10 @@ def cmd_probe(args: argparse.Namespace) -> None:
 def cmd_update_endpoint(args: argparse.Namespace) -> None:
     """Update WireGuard client endpoint on one or more site gateways."""
     _load_dotenv()
-    user = os.environ.get("UNIQUE_GW_USERNAME") or os.environ.get("R_USCC_GW_USERNAME", "admin")
-    pw = os.environ.get("UNIQUE_GW_PASSWORD") or os.environ.get("R_USCC_GW_PASSWORD", "")
+    user = os.environ.get("RUIJIE_GW_USERNAME", "admin")
+    pw = os.environ.get("RUIJIE_GW_PASSWORD", "")
     if not pw:
-        _die("UNIQUE_GW_PASSWORD not set")
+        _die("RUIJIE_GW_PASSWORD not set")
 
     targets: list[dict[str, str]] = []
     if args.targets:
@@ -499,7 +498,7 @@ def cmd_onboard_site(args: argparse.Namespace) -> None:
                 site = _connect_gateway(args.site_ip, user, pw)
                 hub_wg.create_site_client_policy(
                     site,
-                    policy_name=args.policy_name or "US_WG",
+                    policy_name=args.policy_name or "WG_CLIENT",
                     hub_endpoint=args.hub_endpoint or host,
                     hub_endpoint_port=args.hub_port or "51820",
                     hub_pubkey=server.local_pubkey,
@@ -660,7 +659,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ob.add_argument("--hub-endpoint", default=None, help="Hub endpoint (IP or domain)")
     ob.add_argument("--hub-port", default="51820", help="Hub WireGuard port")
-    ob.add_argument("--policy-name", default=None, help="Client policy name (default: US_WG)")
+    ob.add_argument("--policy-name", default=None, help="Client policy name (default: WG_CLIENT)")
     ob.add_argument("--output", "-o", help="Save result to JSON file")
     ob.add_argument("--dry-run", action="store_true")
     ob.add_argument("-y", "--yes", action="store_true", help="Skip confirmation")

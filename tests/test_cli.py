@@ -29,7 +29,7 @@ from .conftest import SAMPLE_CLIENT_POLICY, MockGatewayClient
 
 class TestOnboardingResult:
     def test_success_summary(self):
-        r = OnboardingResult(site_name="Test Site", success=True, peer_ip="10.254.250.50")
+        r = OnboardingResult(site_name="Test Site", success=True, peer_ip="203.0.113.50")
         assert "OK" in r.summary()
         assert "Test Site" in r.summary()
 
@@ -67,15 +67,15 @@ class TestEndpointUpdateResult:
 class TestWireGuardSiteLink:
     def test_fields(self):
         link = WireGuardSiteLink(
-            host="10.200.0.1",
+            host="10.0.0.1",
             role="hub",
-            peer_ip="10.254.250.50",
+            peer_ip="203.0.113.50",
             pubkey="abc123==",
             policy_uuid="uuid-1",
-            policy_name="US_WG",
+            policy_name="WG_CLIENT",
         )
         assert link.role == "hub"
-        assert link.peer_ip == "10.254.250.50"
+        assert link.peer_ip == "203.0.113.50"
 
 
 # ── Parser tests ──────────────────────────────────────────────────────
@@ -144,8 +144,8 @@ class TestBuildParser:
 
     def test_probe(self):
         parser = build_parser()
-        args = parser.parse_args(["probe", "10.254.250.105"])
-        assert args.ip == "10.254.250.105"
+        args = parser.parse_args(["probe", "203.0.113.105"])
+        assert args.ip == "203.0.113.105"
 
     def test_update_endpoint(self):
         parser = build_parser()
@@ -179,13 +179,13 @@ class TestBuildParser:
                 "--site-name",
                 "Test Site",
                 "--site-ip",
-                "10.254.250.50",
+                "203.0.113.50",
                 "--pubkey",
                 "abc123==",
             ]
         )
         assert args.site_name == "Test Site"
-        assert args.site_ip == "10.254.250.50"
+        assert args.site_ip == "203.0.113.50"
         assert args.pubkey == "abc123=="
 
     def test_onboard_site_full(self):
@@ -196,11 +196,11 @@ class TestBuildParser:
                 "--site-name",
                 "Full Site",
                 "--site-ip",
-                "10.254.250.60",
+                "203.0.113.60",
                 "--pubkey",
                 "key==",
                 "--peer-ip",
-                "10.254.250.60",
+                "203.0.113.60",
                 "--psk",
                 "psk123==",
                 "--configure-site",
@@ -280,7 +280,7 @@ class TestPeersList:
     @patch("pyruijie.cli._hub_credentials")
     @patch("pyruijie.cli._load_dotenv")
     def test_list_text_output(self, mock_dotenv, mock_creds, mock_connect, capsys):
-        mock_creds.return_value = ("10.200.0.1", "admin", "pass")
+        mock_creds.return_value = ("10.0.0.1", "admin", "pass")
         gw = MockGatewayClient()
         mock_connect.return_value = gw
 
@@ -295,7 +295,7 @@ class TestPeersList:
     @patch("pyruijie.cli._hub_credentials")
     @patch("pyruijie.cli._load_dotenv")
     def test_list_json_output(self, mock_dotenv, mock_creds, mock_connect, capsys):
-        mock_creds.return_value = ("10.200.0.1", "admin", "pass")
+        mock_creds.return_value = ("10.0.0.1", "admin", "pass")
         gw = MockGatewayClient()
         mock_connect.return_value = gw
 
@@ -315,7 +315,7 @@ class TestPeersAdd:
     @patch("pyruijie.cli._hub_credentials")
     @patch("pyruijie.cli._load_dotenv")
     def test_add_dry_run(self, mock_dotenv, mock_creds, mock_connect, capsys):
-        mock_creds.return_value = ("10.200.0.1", "admin", "pass")
+        mock_creds.return_value = ("10.0.0.1", "admin", "pass")
 
         main(
             [
@@ -324,7 +324,7 @@ class TestPeersAdd:
                 "--desc",
                 "New Site",
                 "--ip",
-                "10.254.250.200",
+                "203.0.113.200",
                 "--pubkey",
                 "NEWKEY==",
                 "--dry-run",
@@ -341,7 +341,7 @@ class TestPeersAdd:
     @patch("pyruijie.cli._hub_credentials")
     @patch("pyruijie.cli._load_dotenv")
     def test_add_with_yes(self, mock_dotenv, mock_creds, mock_connect, capsys):
-        mock_creds.return_value = ("10.200.0.1", "admin", "pass")
+        mock_creds.return_value = ("10.0.0.1", "admin", "pass")
         gw = MockGatewayClient()
         mock_connect.return_value = gw
 
@@ -352,7 +352,7 @@ class TestPeersAdd:
                 "--desc",
                 "New Site",
                 "--ip",
-                "10.254.250.200",
+                "203.0.113.200",
                 "--pubkey",
                 "NEWPUBKEY123==",
                 "-y",
@@ -372,9 +372,9 @@ class TestPeersRemove:
     @patch("pyruijie.cli._hub_credentials")
     @patch("pyruijie.cli._load_dotenv")
     def test_remove_dry_run(self, mock_dotenv, mock_creds, mock_connect, capsys):
-        mock_creds.return_value = ("10.200.0.1", "admin", "pass")
+        mock_creds.return_value = ("10.0.0.1", "admin", "pass")
 
-        main(["peers", "remove", "--ip", "10.254.250.105", "--dry-run"])
+        main(["peers", "remove", "--ip", "203.0.113.105", "--dry-run"])
 
         out = capsys.readouterr().out
         assert "DRY-RUN" in out
@@ -384,7 +384,7 @@ class TestPeersRemove:
     @patch("pyruijie.cli._hub_credentials")
     @patch("pyruijie.cli._load_dotenv")
     def test_remove_with_yes(self, mock_dotenv, mock_creds, mock_connect, capsys):
-        mock_creds.return_value = ("10.200.0.1", "admin", "pass")
+        mock_creds.return_value = ("10.0.0.1", "admin", "pass")
         gw = MockGatewayClient()
         mock_connect.return_value = gw
 
@@ -403,7 +403,7 @@ class TestPeersRename:
     @patch("pyruijie.cli._hub_credentials")
     @patch("pyruijie.cli._load_dotenv")
     def test_rename_dry_run(self, mock_dotenv, mock_creds, mock_connect, capsys, tmp_path):
-        mock_creds.return_value = ("10.200.0.1", "admin", "pass")
+        mock_creds.return_value = ("10.0.0.1", "admin", "pass")
 
         map_file = tmp_path / "rename_map.json"
         map_file.write_text(json.dumps({"laptop-Danny": "Danny Personal Laptop"}))
@@ -418,7 +418,7 @@ class TestPeersRename:
     @patch("pyruijie.cli._hub_credentials")
     @patch("pyruijie.cli._load_dotenv")
     def test_rename_apply(self, mock_dotenv, mock_creds, mock_connect, capsys, tmp_path):
-        mock_creds.return_value = ("10.200.0.1", "admin", "pass")
+        mock_creds.return_value = ("10.0.0.1", "admin", "pass")
         gw = MockGatewayClient()
         mock_connect.return_value = gw
 
@@ -440,15 +440,15 @@ class TestProbe:
     @patch("pyruijie.cli._load_dotenv")
     def test_probe_text(self, mock_dotenv, mock_connect, capsys, monkeypatch):
         # cmd_probe reads the gateway password from the environment directly.
-        monkeypatch.setenv("UNIQUE_GW_PASSWORD", "pass")
-        gw = MockGatewayClient(host="10.254.250.105")
+        monkeypatch.setenv("RUIJIE_GW_PASSWORD", "pass")
+        gw = MockGatewayClient(host="203.0.113.105")
         gw.serial_number = "GW123456"
         mock_connect.return_value = gw
 
-        main(["probe", "10.254.250.105"])
+        main(["probe", "203.0.113.105"])
 
         out = capsys.readouterr().out
-        assert "10.254.250.105" in out
+        assert "203.0.113.105" in out
         assert "Client policies:" in out
 
 
@@ -457,11 +457,11 @@ class TestProbe:
 
 class TestUpdateEndpoint:
     def test_update_single_endpoint_already_configured(self):
-        mock_gw = MockGatewayClient(host="10.254.250.105")
+        mock_gw = MockGatewayClient(host="203.0.113.105")
         # The mock client policy has endpoint "198.51.100.1"
         with patch("pyruijie.cli._connect_gateway", return_value=mock_gw):
             r = _update_single_endpoint(
-                ip="10.254.250.105",
+                ip="203.0.113.105",
                 name="TestGW",
                 new_endpoint="198.51.100.1",
                 old_endpoint=None,
@@ -473,10 +473,10 @@ class TestUpdateEndpoint:
         assert r.action == "already_configured"
 
     def test_update_single_endpoint_needs_update_dry_run(self):
-        mock_gw = MockGatewayClient(host="10.254.250.105")
+        mock_gw = MockGatewayClient(host="203.0.113.105")
         with patch("pyruijie.cli._connect_gateway", return_value=mock_gw):
             r = _update_single_endpoint(
-                ip="10.254.250.105",
+                ip="203.0.113.105",
                 name="TestGW",
                 new_endpoint="new.endpoint.com",
                 old_endpoint=None,
@@ -488,10 +488,10 @@ class TestUpdateEndpoint:
         assert r.action == "needs_update"
 
     def test_update_single_endpoint_wrong_old_endpoint(self):
-        mock_gw = MockGatewayClient(host="10.254.250.105")
+        mock_gw = MockGatewayClient(host="203.0.113.105")
         with patch("pyruijie.cli._connect_gateway", return_value=mock_gw):
             r = _update_single_endpoint(
-                ip="10.254.250.105",
+                ip="203.0.113.105",
                 name="TestGW",
                 new_endpoint="new.endpoint.com",
                 old_endpoint="wrong.old.endpoint",
@@ -505,7 +505,7 @@ class TestUpdateEndpoint:
     def test_update_single_endpoint_login_failure(self):
         with patch("pyruijie.cli._connect_gateway", side_effect=RuijieAuthError("Login failed")):
             r = _update_single_endpoint(
-                ip="10.254.250.105",
+                ip="203.0.113.105",
                 name="TestGW",
                 new_endpoint="new.endpoint.com",
                 old_endpoint=None,
@@ -517,10 +517,10 @@ class TestUpdateEndpoint:
         assert "Login failed" in r.error
 
     def test_update_single_endpoint_applies(self):
-        mock_gw = MockGatewayClient(host="10.254.250.105")
+        mock_gw = MockGatewayClient(host="203.0.113.105")
         with patch("pyruijie.cli._connect_gateway", return_value=mock_gw):
             r = _update_single_endpoint(
-                ip="10.254.250.105",
+                ip="203.0.113.105",
                 name="TestGW",
                 new_endpoint="new.endpoint.com",
                 old_endpoint="198.51.100.1",
@@ -540,7 +540,7 @@ class TestOnboardSite:
     @patch("pyruijie.cli._hub_credentials")
     @patch("pyruijie.cli._load_dotenv")
     def test_onboard_dry_run(self, mock_dotenv, mock_creds, mock_connect, capsys):
-        mock_creds.return_value = ("10.200.0.1", "admin", "pass")
+        mock_creds.return_value = ("10.0.0.1", "admin", "pass")
         hub_gw = MockGatewayClient()
         mock_connect.return_value = hub_gw
 
@@ -550,11 +550,11 @@ class TestOnboardSite:
                 "--site-name",
                 "Test Site",
                 "--site-ip",
-                "10.254.250.50",
+                "203.0.113.50",
                 "--pubkey",
                 "TESTKEY==",
                 "--peer-ip",
-                "10.254.250.200",
+                "203.0.113.200",
                 "--dry-run",
             ]
         )
@@ -567,7 +567,7 @@ class TestOnboardSite:
     @patch("pyruijie.cli._hub_credentials")
     @patch("pyruijie.cli._load_dotenv")
     def test_onboard_add_peer(self, mock_dotenv, mock_creds, mock_connect, capsys):
-        mock_creds.return_value = ("10.200.0.1", "admin", "pass")
+        mock_creds.return_value = ("10.0.0.1", "admin", "pass")
         hub_gw = MockGatewayClient()
         mock_connect.return_value = hub_gw
 
@@ -577,11 +577,11 @@ class TestOnboardSite:
                 "--site-name",
                 "New Site",
                 "--site-ip",
-                "10.254.250.50",
+                "203.0.113.50",
                 "--pubkey",
                 "NEWSITEKEY==",
                 "--peer-ip",
-                "10.254.250.200",
+                "203.0.113.200",
                 "-y",
             ]
         )
@@ -594,7 +594,7 @@ class TestOnboardSite:
     @patch("pyruijie.cli._hub_credentials")
     @patch("pyruijie.cli._load_dotenv")
     def test_onboard_existing_peer_idempotent(self, mock_dotenv, mock_creds, mock_connect, capsys):
-        mock_creds.return_value = ("10.200.0.1", "admin", "pass")
+        mock_creds.return_value = ("10.0.0.1", "admin", "pass")
         hub_gw = MockGatewayClient()
         mock_connect.return_value = hub_gw
 
@@ -605,7 +605,7 @@ class TestOnboardSite:
                 "--site-name",
                 "Existing",
                 "--site-ip",
-                "10.254.250.50",
+                "203.0.113.50",
                 "--pubkey",
                 "KEY==",
                 "--peer-ip",
@@ -623,7 +623,7 @@ class TestOnboardSite:
     def test_onboard_with_output_file(
         self, mock_dotenv, mock_creds, mock_connect, capsys, tmp_path
     ):
-        mock_creds.return_value = ("10.200.0.1", "admin", "pass")
+        mock_creds.return_value = ("10.0.0.1", "admin", "pass")
         hub_gw = MockGatewayClient()
         mock_connect.return_value = hub_gw
 
@@ -635,11 +635,11 @@ class TestOnboardSite:
                 "--site-name",
                 "Output Test",
                 "--site-ip",
-                "10.254.250.50",
+                "203.0.113.50",
                 "--pubkey",
                 "KEY==",
                 "--peer-ip",
-                "10.254.250.201",
+                "203.0.113.201",
                 "-y",
                 "-o",
                 str(out_file),
@@ -655,7 +655,7 @@ class TestOnboardSite:
     @patch("pyruijie.cli._hub_credentials")
     @patch("pyruijie.cli._load_dotenv")
     def test_onboard_conflict_error(self, mock_dotenv, mock_creds, mock_connect, capsys):
-        mock_creds.return_value = ("10.200.0.1", "admin", "pass")
+        mock_creds.return_value = ("10.0.0.1", "admin", "pass")
         hub_gw = MockGatewayClient()
         mock_connect.return_value = hub_gw
 
@@ -667,7 +667,7 @@ class TestOnboardSite:
                 "--site-name",
                 "Conflict Site",
                 "--site-ip",
-                "10.254.250.50",
+                "203.0.113.50",
                 "--pubkey",
                 "DIFFERENTKEY==",
                 "--peer-ip",
@@ -689,11 +689,11 @@ class TestDrift:
     @patch("pyruijie.cli._hub_credentials")
     @patch("pyruijie.cli._load_dotenv")
     def test_drift_detects_in_sync(self, mock_dotenv, mock_creds, mock_connect, capsys):
-        mock_creds.return_value = ("10.200.0.1", "admin", "pass")
+        mock_creds.return_value = ("10.0.0.1", "admin", "pass")
 
         hub_gw = MockGatewayClient()
         site_gw = MockGatewayClient(
-            host="10.254.250.105",
+            host="203.0.113.105",
             client_policy=SAMPLE_CLIENT_POLICY,
         )
 
@@ -736,7 +736,7 @@ class TestMainEntry:
     @patch("pyruijie.cli._hub_credentials")
     @patch("pyruijie.cli._load_dotenv")
     def test_verbose_enables_logging(self, mock_dotenv, mock_creds, mock_connect):
-        mock_creds.return_value = ("10.200.0.1", "admin", "pass")
+        mock_creds.return_value = ("10.0.0.1", "admin", "pass")
         gw = MockGatewayClient()
         mock_connect.return_value = gw
 
@@ -746,7 +746,7 @@ class TestMainEntry:
 
     @patch("pyruijie.cli._load_dotenv")
     def test_env_file_flag(self, mock_dotenv):
-        mock_creds = ("10.200.0.1", "admin", "pass")
+        mock_creds = ("10.0.0.1", "admin", "pass")
         with (
             patch("pyruijie.cli._hub_credentials", return_value=mock_creds),
             patch("pyruijie.cli._connect_gateway", return_value=MockGatewayClient()),

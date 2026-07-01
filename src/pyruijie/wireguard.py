@@ -641,7 +641,7 @@ class WireGuardManager:
         self,
         site_client: GatewayClient,
         *,
-        policy_name: str = "US_WG",
+        policy_name: str = "WG_CLIENT",
         hub_endpoint: str,
         hub_endpoint_port: str = "51820",
         hub_pubkey: str,

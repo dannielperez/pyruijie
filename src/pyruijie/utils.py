@@ -6,16 +6,16 @@ from __future__ import annotations
 def format_mac(mac: str) -> str:
     """Normalize a MAC address to upper-case colon-separated format.
 
-    Handles Ruijie dot-format (``585b.6947.b194``), bare hex
-    (``585B6947B194``), dash-separated, and already-colon-separated
+    Handles Ruijie dot-format (``aabb.ccdd.eeff``), bare hex
+    (``AABBCCDDEEFF``), dash-separated, and already-colon-separated
     formats.
 
     Returns an empty string for empty/None input.
 
     Examples::
 
-        >>> format_mac("585b.6947.b194")
-        '58:5B:69:47:B1:94'
+        >>> format_mac("aabb.ccdd.eeff")
+        'AA:BB:CC:DD:EE:FF'
         >>> format_mac("AA-BB-CC-DD-EE-FF")
         'AA:BB:CC:DD:EE:FF'
         >>> format_mac("aabbccddeeff")

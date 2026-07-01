@@ -250,7 +250,7 @@ class TestListClientPolicies:
         wg = WireGuardManager(mock_gateway)
         policies = wg.list_client_policies()
         assert len(policies) == 1
-        assert policies[0].desc == "US_WG"
+        assert policies[0].desc == "WG_CLIENT"
 
     def test_get_client_policy_default(self, mock_gateway: MockGatewayClient):
         wg = WireGuardManager(mock_gateway)
@@ -433,7 +433,7 @@ class TestDetectDrift:
         )
         client = WireGuardClientPolicy(
             uuid="client_uuid_001",
-            desc="US_WG",
+            desc="WG_CLIENT",
             endpoint="hub.example.invalid",
             local_addr="10.100.0.105/32",
             local_pubkey="STEpubkeyTESTxxxxxxxxxxxxxxxxxxxxxxxxxxx0=",

@@ -2,9 +2,9 @@
 
 Formalises the batch endpoint-update path used during DDNS/public-IP
 changes at the hub. Wraps
-:meth:`pyruijie.WireGuardManager.update_client_endpoint` so UniqueOS,
-scheduled jobs, and the new ``pyruijie workflow`` CLI can call the
-same function.
+:meth:`pyruijie.WireGuardManager.update_client_endpoint` so the
+calling application, scheduled jobs, and the ``pyruijie workflow``
+CLI can call the same function.
 """
 
 from __future__ import annotations
