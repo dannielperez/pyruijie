@@ -1,8 +1,8 @@
-"""Integration-pattern tests — mirrors how UniqueOS consumes pyruijie.
+"""Integration-pattern tests — mirror how a consumer application uses pyruijie.
 
-These tests validate that the public API surface used by the platform
-application remains stable.  Each test directly mimics a usage pattern
-found in the UniqueOS codebase.
+These tests validate that the public API surface used by consumer
+applications remains stable.  Each test directly mimics a common usage
+pattern.
 """
 
 import pytest
@@ -50,7 +50,7 @@ class TestPublicExports:
 
 
 class TestExceptionHierarchy:
-    """UniqueOS catches RuijieError broadly and subtypes specifically."""
+    """Consumers catch RuijieError broadly and subtypes specifically."""
 
     def test_auth_error_is_ruijie_error(self):
         exc = AuthenticationError("bad creds")
@@ -398,7 +398,7 @@ class TestAdapterExceptionHandling:
 
 
 class TestFormatMacIntegration:
-    """UniqueOS normalize_mac() duplicates format_mac(); verify equivalence."""
+    """A consumer normalize_mac() duplicates format_mac(); verify equivalence."""
 
     def test_ruijie_dot_format(self):
         assert format_mac("aabb.ccdd.eeff") == "AA:BB:CC:DD:EE:FF"

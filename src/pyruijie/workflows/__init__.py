@@ -1,8 +1,7 @@
 """High-level workflow orchestrations for Ruijie/Reyee deployments.
 
-Technician-facing multi-step operations lifted from the ad-hoc scripts
-under ``data/`` and ``pyruijie.cli``. All workflows share the same
-shape as :mod:`pytvt.workflows`:
+Technician-facing multi-step operations built on top of
+``pyruijie.cli``. All workflows share a consistent shape:
 
 * **Idempotent.** Running twice on a finished system is safe.
 * **Observable.** Events flow through :class:`ProgressSink`.
