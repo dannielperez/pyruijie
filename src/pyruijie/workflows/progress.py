@@ -1,9 +1,7 @@
 """Progress-sink primitives for :mod:`pyruijie.workflows`.
 
-Deliberately API-compatible with :mod:`pytvt.workflows.progress` so a
-single downstream application GUI component can render events from either library
-without branching. Each library owns its own copy to avoid a cross-
-package dependency.
+Designed with a stable, self-contained API so a single GUI or CLI
+component can render workflow events without branching on internals.
 """
 
 from __future__ import annotations
