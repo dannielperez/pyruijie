@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1]
+
+### Security
+
+- Removed a hardcoded Ruijie Cloud OpenAPI gateway token that was embedded in
+  `authenticate()`. The token is now supplied via the new `api_token`
+  constructor argument or the `RUIJIE_API_TOKEN` environment variable.
+  **Deployments that relied on the built-in token must now provide their own.**
+  The previously committed token should be rotated in the Ruijie Cloud portal.
+
 ## [0.5.0]
 
 ### Changed
