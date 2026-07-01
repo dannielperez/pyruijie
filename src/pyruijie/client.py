@@ -24,6 +24,11 @@ def _sanitize_url(text: str) -> str:
 
 
 DEFAULT_BASE_URL = "https://cloud-us.ruijienetworks.com"
+#: Fixed gateway token the hosted Ruijie Cloud requires as a query param on the
+#: OAuth call.  A self-hosted controller (RG-OCE / MACC-private) may use a
+#: different token or none — override via ``RuijieClient(auth_token=...)`` and pass
+#: ``None`` to omit it entirely.  See ``docs/ONPREM_OCE.md``.
+DEFAULT_AUTH_TOKEN = "***REMOVED***"
 _AUTH_PATH = "/service/api/oauth20/client/access_token"
 _GROUPS_PATH = "/service/api/group/single/tree"
 _DEVICES_PATH = "/service/api/maint/devices"
@@ -39,8 +44,12 @@ class RuijieClient:
         app_id: OAuth2 application ID from the Ruijie Cloud developer portal.
         app_secret: OAuth2 application secret.
         base_url: API base URL.  Defaults to the US region endpoint.
-            Use ``"https://cloud-as.ruijienetworks.com"`` for Asia or the
-            region-specific URL shown in your Ruijie Cloud console.
+            Use ``"https://cloud-as.ruijienetworks.com"`` for Asia, the
+            region-specific URL shown in your Ruijie Cloud console, or a
+            **self-hosted RG-OCE / MACC-private** host (see ``docs/ONPREM_OCE.md``).
+        auth_token: Gateway token sent as a query param on the OAuth call.
+            Defaults to the hosted-cloud value; pass a deployment-specific token
+            or ``None`` (to omit it) when targeting a self-hosted controller.
         timeout: HTTP request timeout in seconds.
 
     Usage::
@@ -57,10 +66,12 @@ class RuijieClient:
         app_id: str,
         app_secret: str,
         base_url: str = DEFAULT_BASE_URL,
+        auth_token: str | None = DEFAULT_AUTH_TOKEN,
         timeout: float = 30.0,
     ) -> None:
         self._app_id = app_id
         self._app_secret = app_secret
+        self._auth_token = auth_token
         self._base_url = base_url.rstrip("/")
         self._access_token: str | None = None
         self._http = httpx.Client(base_url=self._base_url, timeout=timeout)
@@ -102,10 +113,11 @@ class RuijieClient:
                 endpoint returns a non-zero error code.
             ConnectionError: If the API is unreachable.
         """
+        params = {"token": self._auth_token} if self._auth_token else {}
         try:
             resp = self._http.post(
                 _AUTH_PATH,
-                params={"token": "***REMOVED***"},
+                params=params,
                 json={"appid": self._app_id, "secret": self._app_secret},
             )
             resp.raise_for_status()
