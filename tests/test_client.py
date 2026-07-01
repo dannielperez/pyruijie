@@ -42,6 +42,21 @@ class TestAuthenticate:
         with pytest.raises(AuthenticationError, match="500"):
             client.authenticate()
 
+    def test_missing_api_token(self, mock_api, monkeypatch):
+        monkeypatch.delenv("RUIJIE_API_TOKEN", raising=False)
+        client = RuijieClient(app_id="a", app_secret="s")
+
+        with pytest.raises(AuthenticationError, match="API token"):
+            client.authenticate()
+
+    def test_api_token_argument(self, mock_api, monkeypatch):
+        monkeypatch.delenv("RUIJIE_API_TOKEN", raising=False)
+        mock_api.post("/service/api/oauth20/client/access_token").respond(
+            json={"code": 0, "accessToken": "tok-xyz"}
+        )
+        client = RuijieClient(app_id="a", app_secret="s", api_token="explicit-token")
+        assert client.authenticate() == "tok-xyz"
+
     def test_auto_auth_on_first_request(self, mock_api):
         mock_api.post("/service/api/oauth20/client/access_token").respond(
             json={"code": 0, "accessToken": "auto-tok"}

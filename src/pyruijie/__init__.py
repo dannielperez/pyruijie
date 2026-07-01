@@ -29,7 +29,7 @@ from pyruijie.models import (
 from pyruijie.utils import format_mac
 from pyruijie.wireguard import WireGuardManager
 
-__version__ = "0.5.0"
+__version__ = "0.5.1"
 
 __all__ = [
     # Cloud API

@@ -13,6 +13,13 @@ from pyruijie import RuijieClient
 BASE_URL = "https://cloud-us.ruijienetworks.com"
 
 
+@pytest.fixture(autouse=True)
+def _api_token_env(monkeypatch):
+    """Provide a dummy API token so clients constructed without an explicit
+    api_token still authenticate in tests (via the RUIJIE_API_TOKEN fallback)."""
+    monkeypatch.setenv("RUIJIE_API_TOKEN", "test-api-token")
+
+
 @pytest.fixture()
 def mock_api():
     """respx mock router scoped to the Ruijie base URL."""

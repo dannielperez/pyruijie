@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pyruijie"
-version = "0.5.0"
+version = "0.5.1"
 description = "Python client library for Ruijie/Reyee Cloud and Gateway management"
 readme = "README.md"
 license = "Apache-2.0"
