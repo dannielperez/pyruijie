@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import httpx
@@ -38,6 +39,10 @@ class RuijieClient:
     Args:
         app_id: OAuth2 application ID from the Ruijie Cloud developer portal.
         app_secret: OAuth2 application secret.
+        api_token: Ruijie Cloud OpenAPI gateway token sent with the
+            authentication request. Obtain it from your Ruijie Cloud
+            developer portal. Falls back to the ``RUIJIE_API_TOKEN``
+            environment variable when not passed explicitly.
         base_url: API base URL.  Defaults to the US region endpoint.
             Use ``"https://cloud-as.ruijienetworks.com"`` for Asia or the
             region-specific URL shown in your Ruijie Cloud console.
@@ -45,7 +50,7 @@ class RuijieClient:
 
     Usage::
 
-        with RuijieClient(app_id="...", app_secret="...") as client:
+        with RuijieClient(app_id="...", app_secret="...", api_token="...") as client:
             client.authenticate()
             for project in client.get_projects():
                 devices = client.get_devices(project.group_id)
@@ -56,11 +61,13 @@ class RuijieClient:
         *,
         app_id: str,
         app_secret: str,
+        api_token: str | None = None,
         base_url: str = DEFAULT_BASE_URL,
         timeout: float = 30.0,
     ) -> None:
         self._app_id = app_id
         self._app_secret = app_secret
+        self._api_token = api_token or os.environ.get("RUIJIE_API_TOKEN")
         self._base_url = base_url.rstrip("/")
         self._access_token: str | None = None
         self._http = httpx.Client(base_url=self._base_url, timeout=timeout)
@@ -102,10 +109,15 @@ class RuijieClient:
                 endpoint returns a non-zero error code.
             ConnectionError: If the API is unreachable.
         """
+        if not self._api_token:
+            raise AuthenticationError(
+                "No Ruijie Cloud API token configured. Pass api_token=... to "
+                "RuijieClient or set the RUIJIE_API_TOKEN environment variable."
+            )
         try:
             resp = self._http.post(
                 _AUTH_PATH,
-                params={"token": "***REMOVED***"},
+                params={"token": self._api_token},
                 json={"appid": self._app_id, "secret": self._app_secret},
             )
             resp.raise_for_status()
