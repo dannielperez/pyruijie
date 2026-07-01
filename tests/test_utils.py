@@ -5,8 +5,8 @@ from pyruijie.utils import format_mac
 
 class TestFormatMac:
     def test_ruijie_dot_format(self):
-        """Ruijie Cloud returns MACs in dot-notation (585b.6947.b194)."""
-        assert format_mac("585b.6947.b194") == "58:5B:69:47:B1:94"
+        """Ruijie Cloud returns MACs in dot-notation (aabb.ccdd.eeff)."""
+        assert format_mac("aabb.ccdd.eeff") == "AA:BB:CC:DD:EE:FF"
 
     def test_already_colon_format(self):
         assert format_mac("AA:BB:CC:DD:EE:FF") == "AA:BB:CC:DD:EE:FF"
@@ -27,7 +27,7 @@ class TestFormatMac:
         assert format_mac(None) == ""
 
     def test_already_upper_colon(self):
-        assert format_mac("58:5B:69:47:B1:94") == "58:5B:69:47:B1:94"
+        assert format_mac("AA:BB:CC:DD:EE:FF") == "AA:BB:CC:DD:EE:FF"
 
     def test_invalid_length_passthrough(self):
         """Non-12-hex-char MACs are returned as-is."""

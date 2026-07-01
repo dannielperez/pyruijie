@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0]
+
+### Changed
+
+- **BREAKING: CLI credential env vars renamed** from `UNIQUE_GW_IP` /
+  `UNIQUE_GW_USERNAME` / `UNIQUE_GW_PASSWORD` / `UNIQUE_HUB_HOST` /
+  `UNIQUE_SITE_PRIVKEY` to `RUIJIE_GW_IP` / `RUIJIE_GW_USERNAME` /
+  `RUIJIE_GW_PASSWORD` / `RUIJIE_HUB_HOST` / `RUIJIE_SITE_PRIVKEY`. The legacy
+  `R_USCC_GW_*` / `R_HUB_HOST` fallbacks have been removed. Update your `.env`
+  files and job configs accordingly.
+- Default WireGuard client policy name changed from `US_WG` to `WG_CLIENT`.
+- Documentation genericized for public release (removed internal
+  deployment-specific references and example infrastructure).
+
 ## [0.2.0] — 2026-04-15
 
 ### Added
@@ -20,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`ClientDevice` WiFi/traffic fields** — `flow_up`, `flow_down`, `band`,
   `rssi`, `channel` now modeled from the API response (Section 3.0).
 - **Integration-pattern test suite** (`test_integration_patterns.py`) — tests
-  mirroring exact UniqueOS usage: `model_dump(by_alias=True)` alias
+  mirroring common consumer usage: `model_dump(by_alias=True)` alias
   stability, exception hierarchy, client init kwargs, discovery provider
   flow, device import flow, and `format_mac` compatibility.
 - Comprehensive Args/Returns/Raises docstrings for all public client methods.
@@ -37,7 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`RuijieClient.get_switch_ports(serial_number)`** — paginated retrieval
   of switch port details (API 2.6.7, 0-based pagination).
 - **`format_mac()` utility** — normalize Ruijie dot-format MACs
-  (`585b.6947.b194` → `58:5B:69:47:B1:94`). Also handles dash, bare hex,
+  (`aabb.ccdd.eeff` → `AA:BB:CC:DD:EE:FF`). Also handles dash, bare hex,
   and already-colon-separated formats.
 - **`parse_vlan_list()` utility** — parse VLAN range strings
   (`"1-4,100,200"` → `{1, 2, 3, 4, 100, 200}`).

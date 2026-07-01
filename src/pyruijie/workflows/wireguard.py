@@ -3,8 +3,8 @@
 Thin orchestration layer over :class:`pyruijie.WireGuardManager`. The
 manager owns the LuCI transport; these workflows add ProgressSink
 events, dry-run semantics, structured frozen-dataclass results, and
-secret scrubbing so UniqueOS and scheduled jobs can call identical
-code.
+secret scrubbing so a host application and scheduled jobs can call
+identical code.
 
 Nothing here reimplements gateway protocol logic — the existing
 library is authoritative.

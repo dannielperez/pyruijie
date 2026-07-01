@@ -84,7 +84,7 @@ SAMPLE_CLIENT_POLICY = {
     "uuid": "Y0evjdu7aenaHTmUh5oLdnW6YI25hOGD",
     "enable": "1",
     "type": "0",
-    "desc": "US_WG",
+    "desc": "WG_CLIENT",
     "allowips": ["0.0.0.0/0"],
     "endpoint": "198.51.100.1",
     "endpointPort": "51820",

@@ -117,7 +117,7 @@ for sw in switches:
 from pyruijie import format_mac, parse_vlan_list
 
 # Normalize Ruijie dot-format MACs to colon-separated uppercase
-format_mac("585b.6947.b194")      # → "58:5B:69:47:B1:94"
+format_mac("aabb.ccdd.eeff")      # → "AA:BB:CC:DD:EE:FF"
 format_mac("aa-bb-cc-dd-ee-ff")   # → "AA:BB:CC:DD:EE:FF"
 
 # Parse VLAN range strings
@@ -247,9 +247,9 @@ pyruijie includes a CLI for common WireGuard operations. Set hub credentials
 in a `.env` file:
 
 ```
-R_USCC_GW_IP=10.100.1.1
-R_USCC_GW_USERNAME=admin
-R_USCC_GW_PASSWORD=yourpassword
+RUIJIE_GW_IP=10.100.1.1
+RUIJIE_GW_USERNAME=admin
+RUIJIE_GW_PASSWORD=yourpassword
 ```
 
 ### Peer Management
@@ -307,27 +307,16 @@ python -m pyruijie drift --peer-ip 10.100.0.105 10.100.0.103
 ### Endpoint Updates
 
 ```bash
-# Update WG client endpoint on site gateways (replaces data/update_site_wg_endpoint.py)
+# Update WG client endpoint on site gateways
 python -m pyruijie update-endpoint 10.100.0.105 10.100.0.103 \
     --new-endpoint hub.example.com \
-    --old-endpoint 67.203.206.66 \
+    --old-endpoint 203.0.113.10 \
     --dry-run
 
 # From a targets file
 python -m pyruijie update-endpoint --from-file targets.json \
     --new-endpoint hub.example.com
 ```
-
-### Script Migration Reference
-
-| Old script | CLI equivalent |
-|---|---|
-| `data/probe_site_gw.py <ip>` | `python -m pyruijie probe <ip>` |
-| `data/update_site_wg_endpoint.py --check <ip>` | `python -m pyruijie update-endpoint <ip> --new-endpoint <ep> --dry-run` |
-| `data/update_site_wg_endpoint.py --apply --all` | `python -m pyruijie update-endpoint --from-file targets.json --new-endpoint <ep>` |
-| `data/update_wg_peers.py check` | `python -m pyruijie peers list` |
-| `data/update_wg_peers.py rename --apply` | `python -m pyruijie peers rename map.json -y` |
-| `data/import_wireguard_peers.py --apply` | `python -m pyruijie peers add ...` (per-peer) or `onboard-site` |
 
 ## License
 

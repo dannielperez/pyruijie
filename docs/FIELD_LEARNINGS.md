@@ -1,34 +1,43 @@
-# pyruijie — Field Learnings (validated 2026-06-23, WAN-outage response)
+# pyruijie — Field Learnings
 
-From repointing ~97 site WireGuard tunnels to a DDNS and setting auto egress on
-dual-WAN sites during a primary-WAN ISP outage.
+Vendor-neutral notes on Ruijie/Reyee cloud + gateway behavior, useful when
+building WireGuard automation on top of `pyruijie`. All addresses below are
+placeholders (RFC 5737 / RFC 1918); substitute your own.
 
 ## WireGuard hub / site model
-- Monitoring-center hub is a **dual-WAN** Ruijie EG (LAN `10.200.0.1`). Sites run a WG **client**
-  policy (`US_WG`) to the hub.
-- **Site endpoint should be a DDNS, not a static WAN IP.** A static IP (e.g. `67.203.206.66`) dies
-  with that WAN; the DDNS (`centrouniquec.ruijieddnsd.com`) follows whichever WAN is live. This was
-  the root cause of a mass site outage. Repoint = copy the existing client policy, change only
-  `endpoint`, `wireguard_update(sn, payload)` → `{"code":0,"msg":"OK."}`.
-- **Client `intf` (egress) = `all` (Auto) vs `wan`/`wan2` (pinned).** Sites with **two working WANs**
-  should be `all` so the tunnel rides whichever WAN is up. Value is the string `"all"` (UI label "Auto").
-- **Dual-WAN detection:** `get_gateway_ports(sn)` → count ports with `port_type=="WAN"`,
-  `line_status=="true"`, and an `ip_address`. ≥2 ⇒ dual-WAN-working.
 
-## Gotchas
-- **Cloud `vpn_info` `connectStatus` is STALE/unreliable** — it lagged *backwards* during the
-  incident. Don't use it as ground truth for up/down; prefer device `get_devices` online + actual
-  reachability, or accept it as soft signal only.
-- `get_devices(groupId)` `offlineReason=INFORM` on a tight cluster at the same minute = upstream
-  link/WAN drop, not individual device failures. `lastOnline` is ms epoch.
-- A device whose gateway is offline in cloud can still accept a queued config change (applies on
-  reconnect) — but if it egresses cloud-management through the dead tunnel, it won't.
+- A common topology is a central **dual-WAN** Ruijie EG acting as the WireGuard
+  **hub**, with remote sites running a WG **client** policy back to it.
+- **Prefer a DDNS name over a static WAN IP for the site→hub endpoint.** A static
+  IP tied to one WAN dies when that WAN fails; a DDNS name that tracks the live
+  WAN survives a WAN failover. Repointing is a minimal diff: copy the existing
+  client policy and change only `endpoint`; a successful
+  `wireguard_update(sn, payload)` returns `{"code": 0, "msg": "OK."}`.
+- **Client `intf` (egress) — `all` (UI label "Auto") vs a pinned `wan` / `wan2`.**
+  On a site with two working WANs, `all` lets the tunnel ride whichever WAN is up.
+  The API value is the literal string `"all"`.
+- **Dual-WAN detection:** `get_gateway_ports(sn)` and count ports where
+  `port_type == "WAN"`, `line_status == "true"`, and an `ip_address` is present.
+  Two or more ⇒ dual-WAN working.
 
-## Suggested high-level helpers (would directly back UniqueOS actions)
-- `repoint_endpoint(site, new_endpoint)` — minimal-diff WG client endpoint change (idempotent).
-- `set_egress(site, mode)` — set client `intf` (auto/wan/wan2).
-- `detect_dual_wan(sn)` → (#wan_ports, #wan_up, ips).
-- `site_connectivity(site)` — composite status not relying solely on stale `connectStatus`.
+## Cloud API gotchas
 
-(Working reference implementations live in unique-audit `data/repoint_wg_to_ddns_cloud.py`
-and `data/wg_set_auto_egress.py`.)
+- **`vpn_info` `connectStatus` is stale/unreliable** — it can lag, and even lag
+  *backwards*. Don't treat it as ground truth for up/down; prefer device
+  `get_devices` online state plus actual reachability, or use it only as a soft
+  signal.
+- `get_devices(groupId)` reporting `offlineReason == "INFORM"` across a tight
+  cluster of devices at the same minute usually means an upstream link/WAN drop,
+  not individual device failures. `lastOnline` is a millisecond epoch.
+- A device whose gateway is offline in the cloud can still accept a queued config
+  change — it applies on reconnect. But if the device egresses cloud management
+  through the same tunnel/link that is down, the change won't reach it.
+
+## Suggested high-level helpers
+
+- `repoint_endpoint(site, new_endpoint)` — minimal-diff, idempotent WG client
+  endpoint change.
+- `set_egress(site, mode)` — set client `intf` (`all` / `wan` / `wan2`).
+- `detect_dual_wan(sn)` → `(#wan_ports, #wan_up, ips)`.
+- `site_connectivity(site)` — composite status that does not rely solely on the
+  stale `connectStatus` field.

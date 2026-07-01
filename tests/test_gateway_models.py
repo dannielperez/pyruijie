@@ -169,7 +169,7 @@ class TestWireGuardClientPolicy:
         "uuid": "client_uuid_001",
         "enable": "1",
         "type": "0",
-        "desc": "US_WG",
+        "desc": "WG_CLIENT",
         "endpoint": "198.51.100.1",
         "endpointPort": "51820",
         "localAddr": "10.100.0.105/32",
@@ -193,7 +193,7 @@ class TestWireGuardClientPolicy:
     def test_from_gateway(self):
         policy = WireGuardClientPolicy.from_gateway(self.RAW)
         assert policy.uuid == "client_uuid_001"
-        assert policy.desc == "US_WG"
+        assert policy.desc == "WG_CLIENT"
         assert policy.enabled is True
         assert policy.endpoint == "198.51.100.1"
         assert policy.endpoint_port == "51820"

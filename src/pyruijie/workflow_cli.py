@@ -1,13 +1,13 @@
 """CLI dispatcher for ``pyruijie workflow <name>`` subcommands.
 
-Mirrors :mod:`pytvt.workflow_cli` to give technicians a consistent
-idiom across vendors. Supplies env-driven credential defaults
-(``UNIQUE_GW_USERNAME`` / ``UNIQUE_GW_PASSWORD``) to keep CLI
-invocations short and avoid passing passwords on the command line.
+Provides a consistent workflow idiom for technicians. Supplies
+env-driven credential defaults (``RUIJIE_GW_USERNAME`` /
+``RUIJIE_GW_PASSWORD``) to keep CLI invocations short and avoid
+passing passwords on the command line.
 
 Existing ``pyruijie`` CLI subcommands (peers, probe, drift,
 onboard-site, update-endpoint) remain untouched — this is an additive
-namespace suitable for scheduled jobs and UniqueOS automation.
+namespace suitable for scheduled jobs and automation.
 """
 
 from __future__ import annotations
@@ -35,16 +35,16 @@ from .workflows import (
 
 def _hub_credentials() -> tuple[str, str, str]:
     """Pull hub host + admin creds from environment."""
-    host = os.environ.get("UNIQUE_HUB_HOST") or os.environ.get("R_HUB_HOST", "")
-    user = os.environ.get("UNIQUE_GW_USERNAME") or os.environ.get("R_USCC_GW_USERNAME", "admin")
-    pw = os.environ.get("UNIQUE_GW_PASSWORD") or os.environ.get("R_USCC_GW_PASSWORD", "")
+    host = os.environ.get("RUIJIE_HUB_HOST", "")
+    user = os.environ.get("RUIJIE_GW_USERNAME", "admin")
+    pw = os.environ.get("RUIJIE_GW_PASSWORD", "")
     return host, user, pw
 
 
 def _site_credentials() -> tuple[str, str]:
     """Pull shared site-gateway admin creds from environment."""
-    user = os.environ.get("UNIQUE_GW_USERNAME") or os.environ.get("R_USCC_GW_USERNAME", "admin")
-    pw = os.environ.get("UNIQUE_GW_PASSWORD") or os.environ.get("R_USCC_GW_PASSWORD", "")
+    user = os.environ.get("RUIJIE_GW_USERNAME", "admin")
+    pw = os.environ.get("RUIJIE_GW_PASSWORD", "")
     return user, pw
 
 
@@ -87,12 +87,12 @@ def workflow_cli(argv: Sequence[str] | None = None) -> None:
     )
     ob.add_argument(
         "--site-privkey-env",
-        default="UNIQUE_SITE_PRIVKEY",
+        default="RUIJIE_SITE_PRIVKEY",
         help="Env var name that holds the site private key "
-        "(default: UNIQUE_SITE_PRIVKEY). Never accepted on "
+        "(default: RUIJIE_SITE_PRIVKEY). Never accepted on "
         "the command line.",
     )
-    ob.add_argument("--site-policy-name", default="US_WG")
+    ob.add_argument("--site-policy-name", default="WG_CLIENT")
     ob.add_argument("--hub-endpoint", default=None)
     ob.add_argument("--hub-endpoint-port", default="51820")
     ob.add_argument("--apply", action="store_true")
@@ -169,7 +169,7 @@ def _mk_sink(args: argparse.Namespace) -> ConsoleProgressSink | None:
 def _login_hub() -> WireGuardManager:
     host, user, pw = _hub_credentials()
     if not host or not pw:
-        _die("UNIQUE_HUB_HOST and UNIQUE_GW_PASSWORD env vars are required")
+        _die("RUIJIE_HUB_HOST and RUIJIE_GW_PASSWORD env vars are required")
     try:
         gw = _connect_gateway(host, user, pw)
     except Exception as exc:  # noqa: BLE001
@@ -189,7 +189,7 @@ def _run_onboard_site(args: argparse.Namespace) -> None:
             _die(f"--configure-site requires ${args.site_privkey_env} to be set")
         user, pw = _site_credentials()
         if not pw:
-            _die("UNIQUE_GW_PASSWORD is required for site login")
+            _die("RUIJIE_GW_PASSWORD is required for site login")
         try:
             site_client = _connect_gateway(args.site_ip, user, pw)
         except Exception as exc:  # noqa: BLE001
@@ -286,7 +286,7 @@ def _run_drift(args: argparse.Namespace) -> None:
     sink = _mk_sink(args)
     user, pw = _site_credentials()
     if not pw:
-        _die("UNIQUE_GW_PASSWORD is required")
+        _die("RUIJIE_GW_PASSWORD is required")
 
     def factory(ip: str) -> GatewayClient:
         return _connect_gateway(ip, user, pw)
@@ -340,7 +340,7 @@ def _run_update_endpoint(args: argparse.Namespace) -> None:
 
     user, pw = _site_credentials()
     if not pw:
-        _die("UNIQUE_GW_PASSWORD is required")
+        _die("RUIJIE_GW_PASSWORD is required")
 
     def factory(ip: str) -> GatewayClient:
         return _connect_gateway(ip, user, pw)
