@@ -2,6 +2,7 @@
 
 from pyruijie import workflows
 from pyruijie.client import DEFAULT_BASE_URL, RuijieClient
+from pyruijie.ddns import DdnsError, DdnsRecord, RuijieWebSession
 from pyruijie.exceptions import (
     APIError,
     AuthenticationError,
@@ -35,6 +36,10 @@ __all__ = [
     # Cloud API
     "DEFAULT_BASE_URL",
     "RuijieClient",
+    # DDNS (web-SSO session)
+    "RuijieWebSession",
+    "DdnsRecord",
+    "DdnsError",
     "APIError",
     "AuthenticationError",
     "ConnectionError",
