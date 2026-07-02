@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `ddns` module: `RuijieWebSession` (web-SSO login, the flow the cloud UI uses)
+  and native Ruijie DDNS (`*.ruijieddnsd.com`) read via the `/webproxy` +
+  `/aliyun/device/domain/info` pass-through — the DDNS config is not exposed by
+  the appid/secret open API. Methods: `get_ddns(sn)`, `enumerate_ddns(sns)`,
+  `list_domain_suffixes()`, and `webproxy(api, method, module)` for other web-only
+  endpoints. `set_ddns` is stubbed pending a live capture of the UI Save call.
+  Verified live 2026-07-02 (35+ US gateways enumerated). Adds a `cryptography`
+  dependency (RSA password encryption for the SSO login).
+
 ## [0.5.1]
 
 ### Security
