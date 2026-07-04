@@ -28,6 +28,13 @@ from pyruijie.models import (
     parse_vlan_list,
 )
 from pyruijie.utils import format_mac
+from pyruijie.wan_loadbalance import (
+    WanLine,
+    WanLoadBalance,
+    build_master_swap_payload,
+    get_wan_loadbalance,
+    set_wan_primary,
+)
 from pyruijie.wireguard import WireGuardManager
 
 __version__ = "0.5.1"
@@ -63,5 +70,11 @@ __all__ = [
     "WireGuardClientPolicy",
     "WireGuardConfigExport",
     "WireGuardManager",
+    # WAN load-balance (mllb, LuCI JSON-RPC)
+    "WanLine",
+    "WanLoadBalance",
+    "build_master_swap_payload",
+    "get_wan_loadbalance",
+    "set_wan_primary",
     "workflows",
 ]
