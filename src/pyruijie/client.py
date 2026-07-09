@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import threading
+import time
 from typing import Any
 
 import httpx
@@ -11,6 +13,42 @@ from pyruijie.exceptions import APIError, AuthenticationError, ConnectionError
 from pyruijie.models import ClientDevice, Device, GatewayPort, Project, SwitchPort
 
 _REDACT_PARAMS = frozenset({"access_token", "token", "secret"})
+
+# Refresh tokens this many seconds before they actually expire.
+_EXPIRY_BUFFER_SECONDS = 60
+
+# Conservative token lifetime used when the auth response carries no explicit
+# expiry (the Ruijie Cloud ``access_token`` endpoint returns only ``accessToken``
+# today). Real Ruijie Cloud tokens live materially longer than this — hours — so
+# a 30-minute cache stays comfortably inside that window while collapsing the
+# re-auth storm. Override with the ``token_ttl`` constructor argument or the
+# ``RUIJIE_TOKEN_TTL_SECONDS`` environment variable.
+_DEFAULT_TOKEN_TTL_SECONDS = 1800.0
+
+# Process-wide token cache, shared across RuijieClient instances.
+#
+# The whole ~100-site fleet lives under ONE Ruijie Cloud account. A common
+# consumer pattern is a short-lived facade: build a client, authenticate, fetch
+# one project, close — repeated per project in a fan-out loop. Because each
+# facade owns its own client with an empty in-memory token, that pattern
+# re-authenticates on *every* project (~109 mints per sweep) against a single
+# shared cloud account, which is wasteful and risks tripping Ruijie Cloud's API
+# rate limits (throttling the entire fleet's monitoring). This cache lets a
+# fresh instance reuse a still-valid token minted by a sibling instance.
+#
+# Keyed by (base_url, app_id, api_token) — the identity the token is scoped to.
+# Values are (access_token, expires_at monotonic seconds). Guarded by a lock so
+# the dict stays consistent under a threaded worker pool. A rotated secret/token
+# is not reflected until the cached token expires (<= its TTL) or
+# ``invalidate()`` is called — acceptable for the token lifetimes in play.
+_TOKEN_CACHE: dict[tuple[str, str, str], tuple[str, float]] = {}
+_TOKEN_CACHE_LOCK = threading.Lock()
+
+
+def clear_token_cache() -> None:
+    """Drop all cached tokens (test isolation / forced global re-auth)."""
+    with _TOKEN_CACHE_LOCK:
+        _TOKEN_CACHE.clear()
 
 
 def _sanitize_url(text: str) -> str:
@@ -64,12 +102,19 @@ class RuijieClient:
         api_token: str | None = None,
         base_url: str = DEFAULT_BASE_URL,
         timeout: float = 30.0,
+        token_ttl: float | None = None,
     ) -> None:
         self._app_id = app_id
         self._app_secret = app_secret
         self._api_token = api_token or os.environ.get("RUIJIE_API_TOKEN")
         self._base_url = base_url.rstrip("/")
         self._access_token: str | None = None
+        self._expires_at: float = 0.0
+        if token_ttl is None:
+            token_ttl = float(
+                os.environ.get("RUIJIE_TOKEN_TTL_SECONDS", _DEFAULT_TOKEN_TTL_SECONDS)
+            )
+        self._token_ttl = token_ttl
         self._http = httpx.Client(base_url=self._base_url, timeout=timeout)
 
     def __repr__(self) -> str:
@@ -94,12 +139,22 @@ class RuijieClient:
 
     # -- authentication --------------------------------------------------------
 
-    def authenticate(self) -> str:
+    @property
+    def _cache_key(self) -> tuple[str, str, str]:
+        return (self._base_url, self._app_id, self._api_token or "")
+
+    def authenticate(self, *, force: bool = False) -> str:
         """Authenticate with the Ruijie Cloud API and return the access token.
 
         Called automatically on the first API request if not already
-        authenticated.  Call explicitly to verify credentials before
-        making data requests.
+        authenticated. May return a still-valid token held by this instance or
+        by the process-wide :data:`_TOKEN_CACHE` (so a per-project fan-out reuses
+        one token instead of re-minting ~109 per sweep against the shared cloud
+        account) rather than making a network round-trip.
+
+        Args:
+            force: Skip both caches and always mint a fresh token — e.g. a
+                connection tester that must verify credentials live.
 
         Returns:
             The OAuth2 access token string.
@@ -109,6 +164,22 @@ class RuijieClient:
                 endpoint returns a non-zero error code.
             ConnectionError: If the API is unreachable.
         """
+        if not force:
+            # Fast path: this instance already holds a live token.
+            if self._access_token and time.monotonic() < self._expires_at:
+                return self._access_token
+            # Cross-instance cache: reuse a token a sibling instance minted
+            # against the same Ruijie Cloud account.
+            with _TOKEN_CACHE_LOCK:
+                cached = _TOKEN_CACHE.get(self._cache_key)
+                if cached is not None and time.monotonic() < cached[1]:
+                    self._access_token, self._expires_at = cached
+                    return self._access_token
+
+        return self._fetch_token()
+
+    def _fetch_token(self) -> str:
+        """Mint a fresh token from the auth endpoint and publish it to the cache."""
         if not self._api_token:
             raise AuthenticationError(
                 "No Ruijie Cloud API token configured. Pass api_token=... to "
@@ -131,7 +202,23 @@ class RuijieClient:
             raise AuthenticationError(data.get("msg", "Unknown authentication error"))
 
         self._access_token = data["accessToken"]
+        # The endpoint returns only ``accessToken`` today; honor an ``expiresIn``
+        # (seconds) if a future/region response ever includes one, else fall back
+        # to the conservative configured TTL.
+        expires_in = data.get("expiresIn")
+        ttl = float(expires_in) if expires_in else self._token_ttl
+        self._expires_at = time.monotonic() + max(ttl - _EXPIRY_BUFFER_SECONDS, 0.0)
+
+        with _TOKEN_CACHE_LOCK:
+            _TOKEN_CACHE[self._cache_key] = (self._access_token, self._expires_at)
         return self._access_token
+
+    def invalidate(self) -> None:
+        """Force the next :meth:`authenticate` call to mint a fresh token."""
+        self._access_token = None
+        self._expires_at = 0.0
+        with _TOKEN_CACHE_LOCK:
+            _TOKEN_CACHE.pop(self._cache_key, None)
 
     @property
     def is_authenticated(self) -> bool:
@@ -140,7 +227,7 @@ class RuijieClient:
     # -- internal HTTP helpers -------------------------------------------------
 
     def _ensure_auth(self) -> None:
-        if not self._access_token:
+        if not self._access_token or time.monotonic() >= self._expires_at:
             self.authenticate()
 
     def _request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
