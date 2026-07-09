@@ -9,8 +9,17 @@ import pytest
 import respx
 
 from pyruijie import RuijieClient
+from pyruijie.client import clear_token_cache
 
 BASE_URL = "https://cloud-us.ruijienetworks.com"
+
+
+@pytest.fixture(autouse=True)
+def _isolate_token_cache():
+    """The Ruijie token cache is process-wide; clear it before every test so a
+    token minted by one test never leaks into another (which would let a client
+    short-circuit auth and skip the respx mock)."""
+    clear_token_cache()
 
 
 @pytest.fixture(autouse=True)
