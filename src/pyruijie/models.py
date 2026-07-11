@@ -43,7 +43,10 @@ class Device(BaseModel):
 
     @property
     def is_online(self) -> bool:
-        return self.online_status == "ONLINE"
+        # Ruijie Cloud has returned both spellings for this enum: "ONLINE"
+        # historically, "ON" observed live on cloud-us since 2026-07-11 (the
+        # exact-match on "ONLINE" silently marked whole fleets offline).
+        return (self.online_status or "").upper() in {"ON", "ONLINE"}
 
 
 class ClientDevice(BaseModel):
