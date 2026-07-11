@@ -61,6 +61,35 @@ class TestDevice:
         )
         assert d.is_online is False
 
+    def test_online_device_short_enum(self):
+        # cloud-us returns "ON" since 2026-07-11 (observed live); the previous
+        # exact-match on "ONLINE" marked every device offline.
+        d = Device.model_validate(
+            {
+                "serialNumber": "SN002B",
+                "onlineStatus": "ON",
+            }
+        )
+        assert d.is_online is True
+
+    def test_online_device_case_insensitive(self):
+        d = Device.model_validate(
+            {
+                "serialNumber": "SN002C",
+                "onlineStatus": "online",
+            }
+        )
+        assert d.is_online is True
+
+    def test_off_status_is_offline(self):
+        d = Device.model_validate(
+            {
+                "serialNumber": "SN002D",
+                "onlineStatus": "OFF",
+            }
+        )
+        assert d.is_online is False
+
     def test_minimal_device(self):
         d = Device.model_validate({"serialNumber": "SN003"})
         assert d.serial_number == "SN003"

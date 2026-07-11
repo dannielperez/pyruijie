@@ -24,6 +24,7 @@ default route, so a WireGuard client pinned (``intf``) to a WAN that you demote 
 backup goes dark.  When swapping the master, move any such WG client to ``intf=all``
 (or the new master) in the same change window.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
