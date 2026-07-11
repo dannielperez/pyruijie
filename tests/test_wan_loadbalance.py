@@ -3,6 +3,7 @@
 Fixtures mirror a real ``devConfig.get module=mllb`` response captured from a
 ReyeeOS EG (firmware EG_3.0(1)B11P410): Active/Backup, Forced-Switch, two WANs.
 """
+
 from __future__ import annotations
 
 import pytest
