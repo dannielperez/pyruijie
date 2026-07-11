@@ -61,7 +61,9 @@ class RuijieWebSession:
     open API). Use this for features only the web UI exposes, like DDNS.
     """
 
-    def __init__(self, *, base_url: str, username: str, password: str, timeout: float = 30.0) -> None:
+    def __init__(
+        self, *, base_url: str, username: str, password: str, timeout: float = 30.0
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.username = username
         self.password = password
@@ -70,7 +72,7 @@ class RuijieWebSession:
         self._authed = False
 
     @classmethod
-    def from_env(cls, env: dict[str, str] | None = None) -> "RuijieWebSession":
+    def from_env(cls, env: dict[str, str] | None = None) -> RuijieWebSession:
         import os
         e = env or os.environ
         base = (e.get("RC_URL") or DEFAULT_BASE_URL).strip()
@@ -96,8 +98,11 @@ class RuijieWebSession:
         if "lt" not in hidden or "execution" not in hidden:
             raise DdnsError("Could not extract CAS login fields from /sso/login")
         enc = self._encrypt_password(self.password)
-        pre = self.session.post(f"{self.base_url}/sso/validate/password",
-                                json={"account": self.username, "password": enc}, timeout=self.timeout)
+        pre = self.session.post(
+            f"{self.base_url}/sso/validate/password",
+            json={"account": self.username, "password": enc},
+            timeout=self.timeout,
+        )
         pre.raise_for_status()
         pj = pre.json()
         if pj.get("code") != 0:
@@ -117,7 +122,9 @@ class RuijieWebSession:
             raise DdnsError(f"Unexpected post-login landing URL: {resp.url}")
         self._authed = True
 
-    def webproxy(self, api: str, *, method: str = "GET", module: str = "default") -> dict[str, Any]:
+    def webproxy(
+        self, api: str, *, method: str = "GET", module: str = "default"
+    ) -> dict[str, Any]:
         """Call the cloud web UI's /webproxy pass-through (the SPA's transport)."""
         self.login()
         body = {"api": api, "method": method, "module": module,
@@ -136,8 +143,10 @@ class RuijieWebSession:
         d = j.get("data") or {}
         rr = d.get("rr") or None
         dom = d.get("domainName") or _SUFFIX
-        return DdnsRecord(sn=sn, hostname=f"{rr}.{dom}" if rr else None, ip=d.get("ip") or None,
-                          bind_ip_type=d.get("bindIpType"), bind_eg_port=d.get("bindEgPort"), rr=rr)
+        return DdnsRecord(
+            sn=sn, hostname=f"{rr}.{dom}" if rr else None, ip=d.get("ip") or None,
+            bind_ip_type=d.get("bindIpType"), bind_eg_port=d.get("bindEgPort"), rr=rr,
+        )
 
     def enumerate_ddns(self, sns: list[str]) -> dict[str, DdnsRecord]:
         """Read DDNS for many gateways. Returns {sn: DdnsRecord}; skips failures."""
