@@ -15,6 +15,7 @@ the cloud UI uses) and exposes DDNS read/enumerate. Discovered + verified live
 
 Auth env: ``RC_URL`` / ``RC_username`` / ``RC_password``.
 """
+
 from __future__ import annotations
 
 import base64
@@ -42,12 +43,13 @@ class DdnsError(RuntimeError):
 @dataclass(slots=True)
 class DdnsRecord:
     """A gateway's native Ruijie DDNS binding."""
+
     sn: str
-    hostname: str | None          # e.g. "terracayey.ruijieddnsd.com" or None
-    ip: str | None                # current mapped public IP
-    bind_ip_type: str | None      # "WAN" | "PUBLIC"
-    bind_eg_port: str | None      # egress WAN port, usually "default"
-    rr: str | None                # the subdomain label ("terracayey")
+    hostname: str | None  # e.g. "terracayey.ruijieddnsd.com" or None
+    ip: str | None  # current mapped public IP
+    bind_ip_type: str | None  # "WAN" | "PUBLIC"
+    bind_eg_port: str | None  # egress WAN port, usually "default"
+    rr: str | None  # the subdomain label ("terracayey")
 
     @property
     def configured(self) -> bool:
@@ -74,6 +76,7 @@ class RuijieWebSession:
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> RuijieWebSession:
         import os
+
         e = env or os.environ
         base = (e.get("RC_URL") or DEFAULT_BASE_URL).strip()
         user = (e.get("RC_username") or "").strip()
@@ -92,9 +95,13 @@ class RuijieWebSession:
             return
         page = self.session.get(f"{self.base_url}/sso/login", timeout=self.timeout)
         page.raise_for_status()
-        hidden = dict(re.findall(
-            r'<input[^>]+type=["\']hidden["\'][^>]*name=["\']([^"\']+)["\'][^>]*value=["\']([^"\']*)',
-            page.text, re.IGNORECASE))
+        hidden = dict(
+            re.findall(
+                r'<input[^>]+type=["\']hidden["\'][^>]*name=["\']([^"\']+)["\'][^>]*value=["\']([^"\']*)',
+                page.text,
+                re.IGNORECASE,
+            )
+        )
         if "lt" not in hidden or "execution" not in hidden:
             raise DdnsError("Could not extract CAS login fields from /sso/login")
         enc = self._encrypt_password(self.password)
@@ -109,14 +116,26 @@ class RuijieWebSession:
             raise DdnsError(pj.get("msg", "Credential validation failed"))
         if pj.get("isOpen2FA"):
             raise DdnsError("Account requires 2FA — not automated")
-        resp = self.session.post(f"{self.base_url}/sso/login", data={
-            "username": self.username, "originalPassword": "", "password": enc,
-            "lt": hidden.get("lt", ""), "execution": hidden.get("execution", ""),
-            "sign": hidden.get("sign", ""), "action": hidden.get("action", ""),
-            "_eventId": hidden.get("_eventId", "submit") or "submit",
-            "timeZone": hidden.get("timeZone", ""), "selectedCloud": pj.get("area", ""),
-            "googleTotpCode": "", "disposableCode": "", "submit": "Login",
-        }, timeout=self.timeout, allow_redirects=True)
+        resp = self.session.post(
+            f"{self.base_url}/sso/login",
+            data={
+                "username": self.username,
+                "originalPassword": "",
+                "password": enc,
+                "lt": hidden.get("lt", ""),
+                "execution": hidden.get("execution", ""),
+                "sign": hidden.get("sign", ""),
+                "action": hidden.get("action", ""),
+                "_eventId": hidden.get("_eventId", "submit") or "submit",
+                "timeZone": hidden.get("timeZone", ""),
+                "selectedCloud": pj.get("area", ""),
+                "googleTotpCode": "",
+                "disposableCode": "",
+                "submit": "Login",
+            },
+            timeout=self.timeout,
+            allow_redirects=True,
+        )
         resp.raise_for_status()
         if "/macc5/adminIntl/" not in resp.url:
             raise DdnsError(f"Unexpected post-login landing URL: {resp.url}")
@@ -127,11 +146,19 @@ class RuijieWebSession:
     ) -> dict[str, Any]:
         """Call the cloud web UI's /webproxy pass-through (the SPA's transport)."""
         self.login()
-        body = {"api": api, "method": method, "module": module,
-                "querys": {"lang": "en"}, "authParams": {"api": api, "method": method}}
-        r = self.session.post(f"{self.base_url}/webproxy/common/api?{api}",
-                              json=body, timeout=self.timeout,
-                              headers={"Content-Type": "application/json"})
+        body = {
+            "api": api,
+            "method": method,
+            "module": module,
+            "querys": {"lang": "en"},
+            "authParams": {"api": api, "method": method},
+        }
+        r = self.session.post(
+            f"{self.base_url}/webproxy/common/api?{api}",
+            json=body,
+            timeout=self.timeout,
+            headers={"Content-Type": "application/json"},
+        )
         r.raise_for_status()
         return r.json()
 
@@ -144,8 +171,12 @@ class RuijieWebSession:
         rr = d.get("rr") or None
         dom = d.get("domainName") or _SUFFIX
         return DdnsRecord(
-            sn=sn, hostname=f"{rr}.{dom}" if rr else None, ip=d.get("ip") or None,
-            bind_ip_type=d.get("bindIpType"), bind_eg_port=d.get("bindEgPort"), rr=rr,
+            sn=sn,
+            hostname=f"{rr}.{dom}" if rr else None,
+            ip=d.get("ip") or None,
+            bind_ip_type=d.get("bindIpType"),
+            bind_eg_port=d.get("bindEgPort"),
+            rr=rr,
         )
 
     def enumerate_ddns(self, sns: list[str]) -> dict[str, DdnsRecord]:
@@ -164,8 +195,15 @@ class RuijieWebSession:
         data = j.get("data") or []
         return [d.get("domainName", d) if isinstance(d, dict) else d for d in data]
 
-    def set_ddns(self, sn: str, rr: str, *, bind_ip_type: str = "PUBLIC",
-                 bind_eg_port: str = "default", suffix: str = _SUFFIX) -> dict[str, Any]:
+    def set_ddns(
+        self,
+        sn: str,
+        rr: str,
+        *,
+        bind_ip_type: str = "PUBLIC",
+        bind_eg_port: str = "default",
+        suffix: str = _SUFFIX,
+    ) -> dict[str, Any]:
         """Create/update a gateway's native Ruijie DDNS binding to ``rr.suffix``.
 
         WRITE PATH — the exact create endpoint/payload is captured from a live
@@ -176,4 +214,5 @@ class RuijieWebSession:
         raise NotImplementedError(
             "set_ddns write path pending live capture of the UI Save call "
             "(POST /webproxy/common/api?/aliyun/device/domain/... ). "
-            "Use the web GUI to create, then get_ddns() to verify.")
+            "Use the web GUI to create, then get_ddns() to verify."
+        )
