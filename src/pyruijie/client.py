@@ -24,6 +24,8 @@ _EXPIRY_BUFFER_SECONDS = 60
 # re-auth storm. Override with the ``token_ttl`` constructor argument or the
 # ``RUIJIE_TOKEN_TTL_SECONDS`` environment variable.
 _DEFAULT_TOKEN_TTL_SECONDS = 1800.0
+_DEFAULT_FLEET_DEADLINE_SECONDS = 360.0
+_DEFAULT_FLEET_MAX_PAGES = 100
 
 # Process-wide token cache, shared across RuijieClient instances.
 #
@@ -110,6 +112,7 @@ class RuijieClient:
         self._base_url = base_url.rstrip("/")
         self._access_token: str | None = None
         self._expires_at: float = 0.0
+        self._request_timeout = float(timeout)
         if token_ttl is None:
             token_ttl = float(
                 os.environ.get("RUIJIE_TOKEN_TTL_SECONDS", _DEFAULT_TOKEN_TTL_SECONDS)
@@ -196,6 +199,8 @@ class RuijieClient:
             raise AuthenticationError(f"HTTP {exc.response.status_code} during auth") from exc
         except httpx.ConnectError as exc:
             raise ConnectionError(_sanitize_url(str(exc))) from exc
+        except httpx.TimeoutException as exc:
+            raise ConnectionError(_sanitize_url(str(exc))) from exc
 
         data = resp.json()
         if data.get("code") != 0:
@@ -251,14 +256,25 @@ class RuijieClient:
             raise APIError(exc.response.status_code, msg) from exc
         except httpx.ConnectError as exc:
             raise ConnectionError(_sanitize_url(str(exc))) from exc
+        except httpx.TimeoutException as exc:
+            raise ConnectionError(_sanitize_url(str(exc))) from exc
 
         data: dict[str, Any] = resp.json()
         if data.get("code") != 0:
             raise APIError(data.get("code", -1), data.get("msg", "Unknown error"))
         return data
 
-    def _get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        return self._request("GET", path, params=params or {})
+    def _get(
+        self,
+        path: str,
+        params: dict[str, Any] | None = None,
+        *,
+        timeout: float | None = None,
+    ) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {"params": params or {}}
+        if timeout is not None:
+            kwargs["timeout"] = timeout
+        return self._request("GET", path, **kwargs)
 
     def _post(
         self,
@@ -280,6 +296,14 @@ class RuijieClient:
 
     # -- read-only API methods -------------------------------------------------
 
+    def _get_group_tree(self, *, timeout: float | None = None) -> dict[str, Any]:
+        """Return the validated Ruijie account hierarchy root."""
+        data = self._get(_GROUPS_PATH, {"depth": "DEVICE"}, timeout=timeout)
+        groups = data.get("groups", {})
+        if not isinstance(groups, dict):
+            raise APIError(-1, "Ruijie group tree response is not an object")
+        return groups
+
     def get_projects(self) -> list[Project]:
         """Return all projects (building-level groups) from Ruijie Cloud.
 
@@ -294,9 +318,139 @@ class RuijieClient:
             APIError: If the API returns a non-zero error code.
             ConnectionError: If the API is unreachable.
         """
-        data = self._get(_GROUPS_PATH, {"depth": "DEVICE"})
-        groups = data.get("groups", {})
-        return self._collect_projects(groups)
+        return self._collect_projects(self._get_group_tree())
+
+    def get_fleet_devices(
+        self,
+        *,
+        per_page: int = 100,
+        max_pages: int = _DEFAULT_FLEET_MAX_PAGES,
+        deadline_seconds: float = _DEFAULT_FLEET_DEADLINE_SECONDS,
+    ) -> list[Device]:
+        """Return all account devices with their owning building/project.
+
+        Ruijie Cloud's device-list API accepts a hierarchy ``group_id`` and
+        returns each device's concrete ``groupId``. Fetching at the account
+        root therefore replaces one request per building with one paginated
+        root-scoped collection. The hierarchy is used to resolve nested device
+        groups to their nearest BUILDING ancestor before typed results leave
+        the SDK boundary.
+
+        The method fails closed when hierarchy identity is incomplete. A
+        caller must never apply an unpartitionable fleet snapshot to per-site
+        inventory.
+
+        Args:
+            per_page: Devices requested per Ruijie page.
+            max_pages: Defensive upper bound for vendor page requests.
+            deadline_seconds: Aggregate hierarchy/device collection deadline.
+
+        Raises:
+            APIError: If hierarchy identity or pagination completeness is invalid.
+            ConnectionError: If transport fails or the aggregate deadline expires.
+            ValueError: If a pagination bound is not positive.
+        """
+        if per_page < 1 or max_pages < 1 or deadline_seconds <= 0:
+            raise ValueError("Fleet pagination bounds must be positive")
+
+        deadline = time.monotonic() + deadline_seconds
+        groups = self._get_group_tree(timeout=self._fleet_request_timeout(deadline))
+        root_group_id = str(groups.get("groupId") or "")
+        if not root_group_id:
+            raise APIError(-1, "Ruijie group tree is missing its root group ID")
+
+        project_by_group: dict[str, Project] = {}
+        self._index_group_projects(groups, project_by_group=project_by_group)
+        devices = self._get_complete_fleet_devices(
+            root_group_id,
+            per_page=per_page,
+            max_pages=max_pages,
+            deadline=deadline,
+        )
+
+        enriched: list[Device] = []
+        for device in devices:
+            project = project_by_group.get(device.group_id or "")
+            if project is None:
+                raise APIError(
+                    -1,
+                    "Ruijie fleet device group is outside the fetched hierarchy",
+                )
+            enriched.append(
+                device.model_copy(
+                    update={
+                        "project_id": project.group_id,
+                        "project_name": project.name,
+                    },
+                ),
+            )
+        return enriched
+
+    def _get_complete_fleet_devices(
+        self,
+        root_group_id: str,
+        *,
+        per_page: int,
+        max_pages: int,
+        deadline: float,
+    ) -> list[Device]:
+        """Collect a count-validated, duplicate-free fleet within hard bounds."""
+        all_devices: list[Device] = []
+        seen_serials: set[str] = set()
+        expected_total: int | None = None
+
+        for page in range(1, max_pages + 1):
+            data = self._get(
+                _DEVICES_PATH,
+                {"group_id": root_group_id, "page": page, "per_page": per_page},
+                timeout=self._fleet_request_timeout(deadline),
+            )
+            raw_devices = data.get("deviceList")
+            if not isinstance(raw_devices, list):
+                raise APIError(-1, "Ruijie fleet response is missing deviceList")
+
+            raw_total = data.get("totalCount")
+            try:
+                page_total = int(raw_total)
+            except (TypeError, ValueError) as exc:
+                raise APIError(
+                    -1,
+                    "Ruijie fleet response is missing a valid totalCount",
+                ) from exc
+            if page_total < 0:
+                raise APIError(-1, "Ruijie fleet totalCount cannot be negative")
+            if expected_total is None:
+                expected_total = page_total
+                if expected_total > per_page * max_pages:
+                    raise APIError(
+                        -1,
+                        "Ruijie fleet exceeds the defensive pagination limit",
+                    )
+            elif page_total != expected_total:
+                raise APIError(-1, "Ruijie fleet totalCount changed during pagination")
+
+            page_devices = [Device.model_validate(item) for item in raw_devices]
+            page_serials = {device.serial_number for device in page_devices}
+            if len(page_serials) != len(page_devices) or seen_serials & page_serials:
+                raise APIError(-1, "Ruijie fleet pagination returned duplicate devices")
+            seen_serials.update(page_serials)
+            all_devices.extend(page_devices)
+
+            if len(all_devices) == expected_total:
+                return all_devices
+            if len(all_devices) > expected_total:
+                raise APIError(-1, "Ruijie fleet returned more devices than totalCount")
+            if not raw_devices or len(raw_devices) < per_page:
+                raise APIError(-1, "Ruijie fleet snapshot is incomplete")
+
+        raise APIError(-1, "Ruijie fleet pagination exceeded its page limit")
+
+    def _fleet_request_timeout(self, deadline: float) -> float:
+        """Cap the next request so the fleet operation respects its deadline."""
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise ConnectionError("Ruijie fleet listing exceeded its deadline")
+        return min(self._request_timeout, remaining)
 
     def get_devices(self, project_id: str, *, per_page: int = 100) -> list[Device]:
         """Return all managed network devices for a project.
@@ -440,3 +594,25 @@ class RuijieClient:
         for sub in group.get("subGroups", []):
             projects.extend(RuijieClient._collect_projects(sub))
         return projects
+
+    @staticmethod
+    def _index_group_projects(
+        group: dict[str, Any],
+        *,
+        project_by_group: dict[str, Project],
+        owning_project: Project | None = None,
+    ) -> None:
+        """Map every hierarchy group to its nearest BUILDING ancestor."""
+        if group.get("type") == "BUILDING":
+            owning_project = Project.model_validate(group)
+
+        group_id = str(group.get("groupId") or "")
+        if group_id and owning_project is not None:
+            project_by_group[group_id] = owning_project
+
+        for sub in group.get("subGroups", []):
+            RuijieClient._index_group_projects(
+                sub,
+                project_by_group=project_by_group,
+                owning_project=owning_project,
+            )

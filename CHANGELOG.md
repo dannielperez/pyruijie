@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `RuijieClient.get_fleet_devices()` fetches the hierarchy once, paginates the
+  device endpoint from the account root, and resolves each device to its nearest
+  building/project locally, avoiding one API request sequence per project.
+- `Device.group_id`, `group_name`, `project_id`, and `project_name` preserve raw
+  hierarchy identity and the SDK-resolved owning project on typed results.
+
 - `ddns` module: `RuijieWebSession` (web-SSO login, the flow the cloud UI uses)
   and native Ruijie DDNS (`*.ruijieddnsd.com`) read via the `/webproxy` +
   `/aliyun/device/domain/info` pass-through — the DDNS config is not exposed by
@@ -17,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   endpoints. `set_ddns` is stubbed pending a live capture of the UI Save call.
   Verified live 2026-07-02 (35+ US gateways enumerated). Adds a `cryptography`
   dependency (RSA password encryption for the SSO login).
+
+### Fixed
+
+- Normalize read timeouts to the SDK's public `ConnectionError` at both the
+  authentication and authenticated-request boundaries.
+- Fleet pagination validates `totalCount`, rejects repeated/inconsistent pages,
+  and enforces page-count and aggregate-time bounds before returning a snapshot.
 
 ## [0.5.1]
 

@@ -6,6 +6,7 @@ import pytest
 from pyruijie import RuijieClient
 from pyruijie.client import _sanitize_url
 from pyruijie.exceptions import APIError, AuthenticationError
+from pyruijie.exceptions import ConnectionError as RuijieConnectionError
 
 BASE_URL = "https://cloud-us.ruijienetworks.com"
 
@@ -191,6 +192,209 @@ class TestGetDevices:
         mock_api.get("/service/api/maint/devices").respond(json={"code": 0, "deviceList": []})
         devices = client.get_devices("proj-empty")
         assert devices == []
+
+    def test_read_timeout_is_normalized_at_sdk_boundary(self, authed_client):
+        client, mock_api = authed_client
+        mock_api.get("/service/api/maint/devices").mock(
+            side_effect=httpx.ReadTimeout("vendor stalled"),
+        )
+
+        with pytest.raises(RuijieConnectionError, match="vendor stalled"):
+            client.get_devices("proj-timeout")
+
+
+class TestGetFleetDevices:
+    @staticmethod
+    def _mock_single_project_tree(mock_api):
+        return mock_api.get("/service/api/group/single/tree").respond(
+            json={
+                "code": 0,
+                "groups": {
+                    "type": "COMPANY",
+                    "name": "Root",
+                    "groupId": "root-1",
+                    "subGroups": [
+                        {
+                            "type": "BUILDING",
+                            "name": "Site One",
+                            "groupId": "p1",
+                            "subGroups": [],
+                        },
+                    ],
+                },
+            },
+        )
+
+    def test_fetches_root_group_once_and_resolves_building_ancestors(
+        self,
+        authed_client,
+    ):
+        client, mock_api = authed_client
+        tree_route = mock_api.get("/service/api/group/single/tree").respond(
+            json={
+                "code": 0,
+                "groups": {
+                    "type": "COMPANY",
+                    "name": "Root",
+                    "groupId": "root-1",
+                    "subGroups": [
+                        {
+                            "type": "BUILDING",
+                            "name": "Site One",
+                            "groupId": "p1",
+                            "subGroups": [
+                                {
+                                    "type": "NETWORK",
+                                    "name": "Floor One",
+                                    "groupId": "n1",
+                                    "subGroups": [],
+                                },
+                            ],
+                        },
+                        {
+                            "type": "BUILDING",
+                            "name": "Site Two",
+                            "groupId": "p2",
+                            "subGroups": [],
+                        },
+                    ],
+                },
+            },
+        )
+        device_route = mock_api.get("/service/api/maint/devices").respond(
+            json={
+                "code": 0,
+                "deviceList": [
+                    {
+                        "serialNumber": "SN-ONE",
+                        "onlineStatus": "ON",
+                        "groupId": "n1",
+                        "groupName": "Floor One",
+                    },
+                    {
+                        "serialNumber": "SN-TWO",
+                        "onlineStatus": "OFF",
+                        "groupId": "p2",
+                        "groupName": "Site Two",
+                    },
+                ],
+                "totalCount": 2,
+            },
+        )
+
+        devices = client.get_fleet_devices()
+
+        assert tree_route.call_count == 1
+        assert device_route.call_count == 1
+        request_params = device_route.calls[0].request.url.params
+        assert request_params["group_id"] == "root-1"
+        assert [(d.serial_number, d.project_id, d.project_name) for d in devices] == [
+            ("SN-ONE", "p1", "Site One"),
+            ("SN-TWO", "p2", "Site Two"),
+        ]
+
+    def test_fails_closed_when_total_count_is_missing(self, authed_client):
+        client, mock_api = authed_client
+        self._mock_single_project_tree(mock_api)
+        mock_api.get("/service/api/maint/devices").respond(
+            json={
+                "code": 0,
+                "deviceList": [{"serialNumber": "SN-ONE", "groupId": "p1"}],
+            },
+        )
+
+        with pytest.raises(APIError, match="totalCount"):
+            client.get_fleet_devices()
+
+    def test_fails_closed_on_short_incomplete_page(self, authed_client):
+        client, mock_api = authed_client
+        self._mock_single_project_tree(mock_api)
+        mock_api.get("/service/api/maint/devices").respond(
+            json={
+                "code": 0,
+                "deviceList": [{"serialNumber": "SN-ONE", "groupId": "p1"}],
+                "totalCount": 2,
+            },
+        )
+
+        with pytest.raises(APIError, match="incomplete"):
+            client.get_fleet_devices()
+
+    def test_fails_closed_when_a_full_page_repeats(self, authed_client):
+        client, mock_api = authed_client
+        self._mock_single_project_tree(mock_api)
+        device_route = mock_api.get("/service/api/maint/devices").respond(
+            json={
+                "code": 0,
+                "deviceList": [{"serialNumber": "SN-ONE", "groupId": "p1"}],
+                "totalCount": 2,
+            },
+        )
+
+        with pytest.raises(APIError, match="duplicate"):
+            client.get_fleet_devices(per_page=1)
+
+        assert device_route.call_count == 2
+
+    def test_rejects_fleet_larger_than_defensive_page_limit(self, authed_client):
+        client, mock_api = authed_client
+        self._mock_single_project_tree(mock_api)
+        device_route = mock_api.get("/service/api/maint/devices").respond(
+            json={
+                "code": 0,
+                "deviceList": [{"serialNumber": "SN-ONE", "groupId": "p1"}],
+                "totalCount": 2,
+            },
+        )
+
+        with pytest.raises(APIError, match="defensive pagination limit"):
+            client.get_fleet_devices(per_page=1, max_pages=1)
+
+        assert device_route.call_count == 1
+
+    def test_rejects_non_positive_pagination_bounds(self, authed_client):
+        client, _mock_api = authed_client
+
+        with pytest.raises(ValueError, match="bounds"):
+            client.get_fleet_devices(deadline_seconds=0)
+
+    def test_fails_closed_when_root_group_is_missing(self, authed_client):
+        client, mock_api = authed_client
+        mock_api.get("/service/api/group/single/tree").respond(
+            json={"code": 0, "groups": {}},
+        )
+
+        with pytest.raises(APIError, match="root group"):
+            client.get_fleet_devices()
+
+    def test_fails_closed_when_device_group_is_outside_hierarchy(
+        self,
+        authed_client,
+    ):
+        client, mock_api = authed_client
+        mock_api.get("/service/api/group/single/tree").respond(
+            json={
+                "code": 0,
+                "groups": {
+                    "type": "COMPANY",
+                    "name": "Root",
+                    "groupId": "root-1",
+                    "subGroups": [],
+                },
+            },
+        )
+        mock_api.get("/service/api/maint/devices").respond(
+            json={
+                "code": 0,
+                "deviceList": [
+                    {"serialNumber": "SN-X", "groupId": "unknown"},
+                ],
+                "totalCount": 1,
+            },
+        )
+
+        with pytest.raises(APIError, match="outside the fetched hierarchy"):
+            client.get_fleet_devices()
 
 
 # -- context manager -----------------------------------------------------------
