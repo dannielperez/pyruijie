@@ -43,6 +43,8 @@ class TestDevice:
                 "cpeIp": "203.0.113.5",
                 "mac": "AA:BB:CC:DD:EE:FF",
                 "softwareVersion": "11.1(6)B3",
+                "groupId": 154845,
+                "groupName": "HQ Network",
             }
         )
         assert d.serial_number == "SN001"
@@ -51,6 +53,8 @@ class TestDevice:
         assert d.is_online is True
         assert d.local_ip == "10.0.0.1"
         assert d.mac == "AA:BB:CC:DD:EE:FF"
+        assert d.group_id == "154845"
+        assert d.group_name == "HQ Network"
 
     def test_offline_device(self):
         d = Device.model_validate(
