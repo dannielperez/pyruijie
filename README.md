@@ -145,6 +145,7 @@ raw = device.model_dump()
 | `authenticate()` | `str` | Authenticate and return access token |
 | `get_projects()` | `list[Project]` | All building-level groups (sites) |
 | `get_devices(project_id)` | `list[Device]` | All managed infrastructure devices |
+| `get_fleet_devices()` | `list[Device]` | Count-validated root snapshot with owning project identity |
 | `get_clients(project_id)` | `list[ClientDevice]` | Online client devices (phones, cameras, etc.) |
 | `get_gateway_ports(serial_number)` | `list[GatewayPort]` | WAN/LAN port details for a gateway |
 | `get_switch_ports(serial_number)` | `list[SwitchPort]` | Port details for a switch |
@@ -154,7 +155,7 @@ raw = device.model_dump()
 | Model | Key Fields | Computed Properties |
 |---|---|---|
 | `Project` | `name`, `group_id` | — |
-| `Device` | `serial_number`, `product_type`, `product_class`, `name`, `local_ip`, `mac`, `firmware_version` | `is_online` |
+| `Device` | `serial_number`, `product_type`, `product_class`, `name`, `local_ip`, `mac`, `firmware_version`, `group_id`, `project_id`, `project_name` | `is_online` |
 | `ClientDevice` | `mac`, `ip`, `connect_type`, `ssid`, `band`, `rssi`, `channel` | `hostname`, `os_type`, `ap_name`, `ap_mac`, `switch_name`, `is_online` |
 | `GatewayPort` | `alias`, `port_type`, `ip_address`, `ip_mask`, `speed` | `subnet`, `is_lan`, `is_wan`, `is_up` |
 | `SwitchPort` | `name`, `port_type`, `vlan`, `vlan_list`, `is_uplink`, `poe_status` | `allowed_vlans`, `is_up` |
