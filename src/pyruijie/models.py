@@ -38,8 +38,22 @@ class Device(BaseModel):
     egress_ip: str | None = Field(default=None, alias="cpeIp")
     mac: str | None = None
     firmware_version: str | None = Field(default=None, alias="softwareVersion")
+    group_id: str | None = Field(default=None, alias="groupId")
+    group_name: str | None = Field(default=None, alias="groupName")
+    # Enriched by ``RuijieClient.get_fleet_devices`` from the hierarchy tree.
+    # A device may live in a nested network group below its building/project,
+    # so the raw group and owning project are intentionally separate fields.
+    project_id: str | None = None
+    project_name: str | None = None
 
     model_config = {"populate_by_name": True}
+
+    @field_validator("group_id", "project_id", mode="before")
+    @classmethod
+    def _coerce_device_group_ids_to_str(cls, value):
+        if value is None:
+            return None
+        return str(value)
 
     @property
     def is_online(self) -> bool:
