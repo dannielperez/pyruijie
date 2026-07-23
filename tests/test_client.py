@@ -293,6 +293,96 @@ class TestGetFleetDevices:
             ("SN-TWO", "p2", "Site Two"),
         ]
 
+    def test_accepts_root_group_id_from_response_envelope(self, authed_client):
+        client, mock_api = authed_client
+        mock_api.get("/service/api/group/single/tree").respond(
+            json={
+                "code": 0,
+                "groupId": "root-1",
+                "groups": {
+                    "type": "COMPANY",
+                    "name": "Root",
+                    "subGroups": [
+                        {
+                            "type": "BUILDING",
+                            "name": "Site One",
+                            "groupId": "p1",
+                            "subGroups": [],
+                        },
+                    ],
+                },
+            },
+        )
+        device_route = mock_api.get("/service/api/maint/devices").respond(
+            json={
+                "code": 0,
+                "deviceList": [{"serialNumber": "SN-ONE", "groupId": "p1"}],
+                "totalCount": 1,
+            },
+        )
+
+        devices = client.get_fleet_devices()
+
+        assert device_route.calls[0].request.url.params["group_id"] == "root-1"
+        assert devices[0].project_id == "p1"
+
+    def test_accepts_single_root_below_synthetic_wrapper(self, authed_client):
+        client, mock_api = authed_client
+        mock_api.get("/service/api/group/single/tree").respond(
+            json={
+                "code": 0,
+                "groups": {
+                    "subGroups": [
+                        {
+                            "type": "COMPANY",
+                            "name": "Root",
+                            "groupId": "root-1",
+                            "subGroups": [
+                                {
+                                    "type": "BUILDING",
+                                    "name": "Site One",
+                                    "groupId": "p1",
+                                    "subGroups": [],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            },
+        )
+        device_route = mock_api.get("/service/api/maint/devices").respond(
+            json={
+                "code": 0,
+                "deviceList": [{"serialNumber": "SN-ONE", "groupId": "p1"}],
+                "totalCount": 1,
+            },
+        )
+
+        devices = client.get_fleet_devices()
+
+        assert device_route.calls[0].request.url.params["group_id"] == "root-1"
+        assert devices[0].project_id == "p1"
+
+    def test_fails_closed_when_synthetic_wrapper_has_multiple_roots(
+        self,
+        authed_client,
+    ):
+        client, mock_api = authed_client
+        mock_api.get("/service/api/group/single/tree").respond(
+            json={
+                "code": 0,
+                "groups": {
+                    "subGroups": [
+                        {"groupId": "root-1", "subGroups": []},
+                        {"groupId": "root-2", "subGroups": []},
+                    ],
+                },
+            },
+        )
+
+        with pytest.raises(APIError, match="ambiguous root group"):
+            client.get_fleet_devices()
+
     def test_fails_closed_when_total_count_is_missing(self, authed_client):
         client, mock_api = authed_client
         self._mock_single_project_tree(mock_api)
