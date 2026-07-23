@@ -358,6 +358,92 @@ class TestGetFleetDevices:
         with pytest.raises(ValueError, match="bounds"):
             client.get_fleet_devices(deadline_seconds=0)
 
+    def test_token_refresh_cannot_exhaust_aggregate_deadline(self, monkeypatch):
+        class Clock:
+            now = 100.0
+
+            def monotonic(self):
+                return self.now
+
+        clock = Clock()
+        client = RuijieClient(
+            app_id="test-app",
+            app_secret="test-secret",
+            timeout=30.0,
+        )
+        auth_timeouts = []
+
+        def delayed_auth(path, *, params, json, timeout=None):
+            auth_timeouts.append(timeout)
+            clock.now += 6.0
+            return httpx.Response(
+                200,
+                json={"code": 0, "accessToken": "fresh-token"},
+                request=httpx.Request("POST", f"{BASE_URL}{path}"),
+            )
+
+        def unexpected_fleet_request(*args, **kwargs):
+            pytest.fail("fleet request started after authentication exhausted its deadline")
+
+        monkeypatch.setattr("pyruijie.client.time", clock)
+        monkeypatch.setattr(client._http, "post", delayed_auth)
+        monkeypatch.setattr(client._http, "request", unexpected_fleet_request)
+
+        with pytest.raises(RuijieConnectionError, match="deadline"):
+            client.get_fleet_devices(deadline_seconds=5.0)
+
+        assert auth_timeouts == pytest.approx([5.0])
+
+    def test_token_refresh_time_is_removed_from_request_timeout(self, monkeypatch):
+        class Clock:
+            now = 100.0
+
+            def monotonic(self):
+                return self.now
+
+        clock = Clock()
+        client = RuijieClient(
+            app_id="test-app",
+            app_secret="test-secret",
+            timeout=30.0,
+        )
+        request_timeouts = []
+
+        def delayed_auth(path, *, params, json, timeout=None):
+            clock.now += 2.0
+            return httpx.Response(
+                200,
+                json={"code": 0, "accessToken": "fresh-token"},
+                request=httpx.Request("POST", f"{BASE_URL}{path}"),
+            )
+
+        def fleet_request(method, path, *, params, timeout):
+            request_timeouts.append(timeout)
+            if path.endswith("/group/single/tree"):
+                body = {
+                    "code": 0,
+                    "groups": {
+                        "type": "COMPANY",
+                        "name": "Root",
+                        "groupId": "root-1",
+                        "subGroups": [],
+                    },
+                }
+            else:
+                body = {"code": 0, "deviceList": [], "totalCount": 0}
+            return httpx.Response(
+                200,
+                json=body,
+                request=httpx.Request(method, f"{BASE_URL}{path}"),
+            )
+
+        monkeypatch.setattr("pyruijie.client.time", clock)
+        monkeypatch.setattr(client._http, "post", delayed_auth)
+        monkeypatch.setattr(client._http, "request", fleet_request)
+
+        assert client.get_fleet_devices(deadline_seconds=5.0) == []
+        assert request_timeouts == pytest.approx([3.0, 3.0])
+
     def test_fails_closed_when_root_group_is_missing(self, authed_client):
         client, mock_api = authed_client
         mock_api.get("/service/api/group/single/tree").respond(

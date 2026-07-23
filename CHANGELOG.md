@@ -30,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   authentication and authenticated-request boundaries.
 - Fleet pagination validates `totalCount`, rejects repeated/inconsistent pages,
   and enforces page-count and aggregate-time bounds before returning a snapshot.
+- Fleet snapshot authentication now shares the aggregate deadline and deducts
+  token-refresh time from each subsequent request timeout.
 
 ## [0.5.1]
 

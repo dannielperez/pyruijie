@@ -146,7 +146,12 @@ class RuijieClient:
     def _cache_key(self) -> tuple[str, str, str]:
         return (self._base_url, self._app_id, self._api_token or "")
 
-    def authenticate(self, *, force: bool = False) -> str:
+    def authenticate(
+        self,
+        *,
+        force: bool = False,
+        timeout: float | None = None,
+    ) -> str:
         """Authenticate with the Ruijie Cloud API and return the access token.
 
         Called automatically on the first API request if not already
@@ -158,6 +163,8 @@ class RuijieClient:
         Args:
             force: Skip both caches and always mint a fresh token — e.g. a
                 connection tester that must verify credentials live.
+            timeout: Optional timeout for the live token request. Cached tokens
+                do not perform network I/O.
 
         Returns:
             The OAuth2 access token string.
@@ -179,20 +186,24 @@ class RuijieClient:
                     self._access_token, self._expires_at = cached
                     return self._access_token
 
-        return self._fetch_token()
+        return self._fetch_token(timeout=timeout)
 
-    def _fetch_token(self) -> str:
+    def _fetch_token(self, *, timeout: float | None = None) -> str:
         """Mint a fresh token from the auth endpoint and publish it to the cache."""
         if not self._api_token:
             raise AuthenticationError(
                 "No Ruijie Cloud API token configured. Pass api_token=... to "
                 "RuijieClient or set the RUIJIE_API_TOKEN environment variable."
             )
+        request_kwargs: dict[str, Any] = {}
+        if timeout is not None:
+            request_kwargs["timeout"] = timeout
         try:
             resp = self._http.post(
                 _AUTH_PATH,
                 params={"token": self._api_token},
                 json={"appid": self._app_id, "secret": self._app_secret},
+                **request_kwargs,
             )
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
@@ -231,13 +242,24 @@ class RuijieClient:
 
     # -- internal HTTP helpers -------------------------------------------------
 
-    def _ensure_auth(self) -> None:
+    def _ensure_auth(self, *, timeout: float | None = None) -> None:
         if not self._access_token or time.monotonic() >= self._expires_at:
-            self.authenticate()
+            self.authenticate(timeout=timeout)
 
-    def _request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        deadline: float | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
         """Execute an authenticated API request and return the JSON body."""
-        self._ensure_auth()
+        if deadline is None:
+            self._ensure_auth()
+        else:
+            self._ensure_auth(timeout=self._fleet_request_timeout(deadline))
+            kwargs["timeout"] = self._fleet_request_timeout(deadline)
 
         params = kwargs.pop("params", {})
         params["access_token"] = self._access_token
@@ -270,11 +292,12 @@ class RuijieClient:
         params: dict[str, Any] | None = None,
         *,
         timeout: float | None = None,
+        deadline: float | None = None,
     ) -> dict[str, Any]:
         kwargs: dict[str, Any] = {"params": params or {}}
         if timeout is not None:
             kwargs["timeout"] = timeout
-        return self._request("GET", path, **kwargs)
+        return self._request("GET", path, deadline=deadline, **kwargs)
 
     def _post(
         self,
@@ -296,9 +319,19 @@ class RuijieClient:
 
     # -- read-only API methods -------------------------------------------------
 
-    def _get_group_tree(self, *, timeout: float | None = None) -> dict[str, Any]:
+    def _get_group_tree(
+        self,
+        *,
+        timeout: float | None = None,
+        deadline: float | None = None,
+    ) -> dict[str, Any]:
         """Return the validated Ruijie account hierarchy root."""
-        data = self._get(_GROUPS_PATH, {"depth": "DEVICE"}, timeout=timeout)
+        data = self._get(
+            _GROUPS_PATH,
+            {"depth": "DEVICE"},
+            timeout=timeout,
+            deadline=deadline,
+        )
         groups = data.get("groups", {})
         if not isinstance(groups, dict):
             raise APIError(-1, "Ruijie group tree response is not an object")
@@ -354,7 +387,7 @@ class RuijieClient:
             raise ValueError("Fleet pagination bounds must be positive")
 
         deadline = time.monotonic() + deadline_seconds
-        groups = self._get_group_tree(timeout=self._fleet_request_timeout(deadline))
+        groups = self._get_group_tree(deadline=deadline)
         root_group_id = str(groups.get("groupId") or "")
         if not root_group_id:
             raise APIError(-1, "Ruijie group tree is missing its root group ID")
@@ -403,7 +436,7 @@ class RuijieClient:
             data = self._get(
                 _DEVICES_PATH,
                 {"group_id": root_group_id, "page": page, "per_page": per_page},
-                timeout=self._fleet_request_timeout(deadline),
+                deadline=deadline,
             )
             raw_devices = data.get("deviceList")
             if not isinstance(raw_devices, list):
