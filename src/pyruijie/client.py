@@ -326,6 +326,19 @@ class RuijieClient:
         deadline: float | None = None,
     ) -> dict[str, Any]:
         """Return the validated Ruijie account hierarchy root."""
+        groups, _data = self._get_group_tree_response(
+            timeout=timeout,
+            deadline=deadline,
+        )
+        return groups
+
+    def _get_group_tree_response(
+        self,
+        *,
+        timeout: float | None = None,
+        deadline: float | None = None,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Return both hierarchy groups and their response envelope."""
         data = self._get(
             _GROUPS_PATH,
             {"depth": "DEVICE"},
@@ -335,7 +348,7 @@ class RuijieClient:
         groups = data.get("groups", {})
         if not isinstance(groups, dict):
             raise APIError(-1, "Ruijie group tree response is not an object")
-        return groups
+        return groups, data
 
     def get_projects(self) -> list[Project]:
         """Return all projects (building-level groups) from Ruijie Cloud.
@@ -387,10 +400,8 @@ class RuijieClient:
             raise ValueError("Fleet pagination bounds must be positive")
 
         deadline = time.monotonic() + deadline_seconds
-        groups = self._get_group_tree(deadline=deadline)
-        root_group_id = str(groups.get("groupId") or "")
-        if not root_group_id:
-            raise APIError(-1, "Ruijie group tree is missing its root group ID")
+        groups, data = self._get_group_tree_response(deadline=deadline)
+        root_group_id = self._resolve_root_group_id(groups, data)
 
         project_by_group: dict[str, Project] = {}
         self._index_group_projects(groups, project_by_group=project_by_group)
@@ -627,6 +638,35 @@ class RuijieClient:
         for sub in group.get("subGroups", []):
             projects.extend(RuijieClient._collect_projects(sub))
         return projects
+
+    @staticmethod
+    def _resolve_root_group_id(
+        groups: dict[str, Any],
+        data: dict[str, Any],
+    ) -> str:
+        """Resolve the fleet root across Ruijie Cloud response variants."""
+        explicit_ids = {
+            str(value).strip()
+            for value in (data.get("groupId"), groups.get("groupId"))
+            if value is not None and str(value).strip()
+        }
+        if len(explicit_ids) == 1:
+            return explicit_ids.pop()
+        if len(explicit_ids) > 1:
+            raise APIError(-1, "Ruijie group tree has conflicting root group IDs")
+
+        wrapper_ids = {
+            str(group.get("groupId")).strip()
+            for group in groups.get("subGroups", [])
+            if isinstance(group, dict)
+            and group.get("groupId") is not None
+            and str(group.get("groupId")).strip()
+        }
+        if len(wrapper_ids) == 1:
+            return wrapper_ids.pop()
+        if len(wrapper_ids) > 1:
+            raise APIError(-1, "Ruijie group tree has an ambiguous root group")
+        raise APIError(-1, "Ruijie group tree is missing its root group ID")
 
     @staticmethod
     def _index_group_projects(
