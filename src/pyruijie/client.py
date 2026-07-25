@@ -26,6 +26,7 @@ _EXPIRY_BUFFER_SECONDS = 60
 _DEFAULT_TOKEN_TTL_SECONDS = 1800.0
 _DEFAULT_FLEET_DEADLINE_SECONDS = 360.0
 _DEFAULT_FLEET_MAX_PAGES = 100
+_MAX_LEGACY_PAGES = 100
 
 # Process-wide token cache, shared across RuijieClient instances.
 #
@@ -496,7 +497,13 @@ class RuijieClient:
             raise ConnectionError("Ruijie fleet listing exceeded its deadline")
         return min(self._request_timeout, remaining)
 
-    def get_devices(self, project_id: str, *, per_page: int = 100) -> list[Device]:
+    def get_devices(
+        self,
+        project_id: str,
+        *,
+        per_page: int = 100,
+        max_pages: int = _MAX_LEGACY_PAGES,
+    ) -> list[Device]:
         """Return all managed network devices for a project.
 
         Fetches APs, switches, gateways, and other infrastructure devices.
@@ -506,6 +513,7 @@ class RuijieClient:
             project_id: The ``group_id`` of the target project.
             per_page: Number of devices per API page (matches upstream
                 ``per_page`` parameter name).
+            max_pages: Defensive upper bound for vendor page requests.
 
         Returns:
             List of :class:`~pyruijie.Device` instances.
@@ -513,24 +521,36 @@ class RuijieClient:
         Raises:
             APIError: If the API returns a non-zero error code.
             ConnectionError: If the API is unreachable.
+            ValueError: If a pagination bound is not positive.
         """
+        if per_page < 1 or not 1 <= max_pages <= _MAX_LEGACY_PAGES:
+            raise ValueError(
+                "Device pagination bounds require a positive page size "
+                f"and max_pages no greater than {_MAX_LEGACY_PAGES}"
+            )
+
         all_devices: list[Device] = []
-        page = 1
-        while True:
+        for page in range(1, max_pages + 1):
             data = self._get(
                 _DEVICES_PATH,
                 {"group_id": project_id, "page": page, "per_page": per_page},
             )
             raw_devices = data.get("deviceList", [])
             if not raw_devices:
-                break
+                return all_devices
             all_devices.extend(Device.model_validate(d) for d in raw_devices)
             if len(raw_devices) < per_page:
-                break
-            page += 1
-        return all_devices
+                return all_devices
 
-    def get_clients(self, project_id: str, *, page_size: int = 200) -> list[ClientDevice]:
+        raise APIError(-1, "Ruijie device pagination exceeded its page limit")
+
+    def get_clients(
+        self,
+        project_id: str,
+        *,
+        page_size: int = 200,
+        max_pages: int = _MAX_LEGACY_PAGES,
+    ) -> list[ClientDevice]:
         """Return all connected client devices for a project.
 
         Returns devices currently online — phones, laptops, cameras,
@@ -542,6 +562,7 @@ class RuijieClient:
             page_size: Number of clients per API page (matches upstream
                 ``page_size`` parameter name; default 200 for fewer
                 round-trips).
+            max_pages: Defensive upper bound for vendor page requests.
 
         Returns:
             List of :class:`~pyruijie.ClientDevice` instances.
@@ -549,23 +570,35 @@ class RuijieClient:
         Raises:
             APIError: If the API returns a non-zero error code.
             ConnectionError: If the API is unreachable.
+            ValueError: If a pagination bound is not positive.
         """
+        if page_size < 1 or not 1 <= max_pages <= _MAX_LEGACY_PAGES:
+            raise ValueError(
+                "Client pagination bounds require a positive page size "
+                f"and max_pages no greater than {_MAX_LEGACY_PAGES}"
+            )
+
         all_clients: list[ClientDevice] = []
-        page_index = 1
-        while True:
+        seen_macs: set[str] = set()
+        for page_index in range(1, max_pages + 1):
             data = self._get(
                 _CLIENTS_PATH,
                 {"group_id": project_id, "page_index": page_index, "page_size": page_size},
             )
             raw_clients = data.get("list", [])
             if not raw_clients:
-                break
-            all_clients.extend(ClientDevice.model_validate(c) for c in raw_clients)
+                return all_clients
+            page_clients = [ClientDevice.model_validate(c) for c in raw_clients]
+            page_macs = {client.mac for client in page_clients}
+            if len(page_macs) != len(page_clients) or seen_macs & page_macs:
+                raise APIError(-1, "Ruijie client pagination returned duplicate clients")
+            seen_macs.update(page_macs)
+            all_clients.extend(page_clients)
             total = data.get("totalCount", 0)
             if total and len(all_clients) >= total:
-                break
-            page_index += 1
-        return all_clients
+                return all_clients
+
+        raise APIError(-1, "Ruijie client pagination exceeded its page limit")
 
     def get_gateway_ports(self, serial_number: str) -> list[GatewayPort]:
         """Return WAN/LAN port details for a gateway device.
@@ -591,6 +624,7 @@ class RuijieClient:
         serial_number: str,
         *,
         page_size: int = 100,
+        max_pages: int = _MAX_LEGACY_PAGES,
     ) -> list[SwitchPort]:
         """Return port details for a switch device.
 
@@ -603,6 +637,7 @@ class RuijieClient:
         Args:
             serial_number: Serial number of the switch device.
             page_size: Number of ports per API page.
+            max_pages: Defensive upper bound for vendor page requests.
 
         Returns:
             List of :class:`~pyruijie.SwitchPort` instances.
@@ -610,22 +645,28 @@ class RuijieClient:
         Raises:
             APIError: If the device is not found or the API returns an error.
             ConnectionError: If the API is unreachable.
+            ValueError: If a pagination bound is not positive.
         """
+        if page_size < 1 or not 1 <= max_pages <= _MAX_LEGACY_PAGES:
+            raise ValueError(
+                "Switch port pagination bounds require a positive page size "
+                f"and max_pages no greater than {_MAX_LEGACY_PAGES}"
+            )
+
         all_ports: list[SwitchPort] = []
-        page_index = 0
-        while True:
+        for page_index in range(max_pages):
             data = self._get(
                 f"{_SWITCH_PORTS_PATH}/{serial_number}/ports",
                 {"page_size": page_size, "page_index": page_index},
             )
             raw_ports = data.get("portList", [])
             if not raw_ports:
-                break
+                return all_ports
             all_ports.extend(SwitchPort.model_validate(p) for p in raw_ports)
             if len(raw_ports) < page_size:
-                break
-            page_index += 1
-        return all_ports
+                return all_ports
+
+        raise APIError(-1, "Ruijie switch port pagination exceeded its page limit")
 
     # -- helpers ---------------------------------------------------------------
 
