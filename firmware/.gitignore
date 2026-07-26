@@ -1,0 +1,7 @@
+# Firmware binaries are large and may have redistribution restrictions.
+# Keep the catalog and documentation in Git; use an approved artifact store
+# or deliberately configure Git LFS before tracking images.
+*
+!.gitignore
+!README.md
+!catalog.json

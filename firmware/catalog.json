@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "artifacts": [
+    {
+      "id": "est100-e-b11p320-cloud",
+      "model": "EST100-E",
+      "version": "AP_3.0(1)B11P320,Release(12152011)",
+      "filename": null,
+      "sha256": null,
+      "state": "metadata-only",
+      "notes": "Known-good cloud-enablement target observed in the managed fleet. Register the exact vendor image and SHA-256 before enabling uploads."
+    },
+    {
+      "id": "est100-e-b11p327-observed",
+      "model": "EST100-E",
+      "version": "AP_3.0(1)B11P327,Release(12202502)",
+      "filename": null,
+      "sha256": null,
+      "state": "observed",
+      "notes": "Cloud-managed version observed in the existing fleet. Recognized as cloud-capable, but not selected as the B11P96 bootstrap image."
+    },
+    {
+      "id": "est100-e-b11p380-observed",
+      "model": "EST100-E",
+      "version": "AP_3.0(1)B11P380,Release(12231910)",
+      "filename": null,
+      "sha256": null,
+      "state": "observed",
+      "notes": "Cloud-managed version observed in the existing fleet. Recognition does not imply that newest is the correct bootstrap target."
+    }
+  ],
+  "rules": [
+    {
+      "id": "est100-e-b11p96-to-b11p320",
+      "model": "EST100-E",
+      "source_versions": [
+        "AP_3.0(1)B11P96,Release(11132319)"
+      ],
+      "target_artifact": "est100-e-b11p320-cloud",
+      "reason": "B11P96 EST100-E bridges require the approved B11P320 compatibility image before Ruijie Cloud can manage them reliably."
+    }
+  ]
+}

@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Read-only EST bridge firmware recognition from the unauthenticated local
+  login page, exact model/version policy evaluation, concurrent fleet scans,
+  and `pyruijie firmware scan`.
+- A controlled firmware catalog/repository skeleton with model-specific
+  source-to-target paths and SHA-256-gated `pyruijie firmware verify`. The
+  initial policy recognizes EST100-E B11P96 as requiring the known-good
+  B11P320 cloud-compatibility target; the image remains metadata-only until an
+  authorized binary and checksum are registered.
 - `RuijieClient.get_fleet_devices()` fetches the hierarchy once, paginates the
   device endpoint from the account root, and resolves each device to its nearest
   building/project locally, avoiding one API request sequence per project.

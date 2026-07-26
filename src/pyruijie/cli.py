@@ -10,6 +10,7 @@ Entry point::
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import logging
 import os
@@ -126,6 +127,158 @@ def _connect_gateway(host: str, username: str, password: str) -> GatewayClient:
 def _die(msg: str, code: int = 1) -> None:
     print(f"Error: {msg}", file=sys.stderr)
     sys.exit(code)
+
+
+# ── Firmware audit commands ──────────────────────────────────────────
+
+
+def _default_firmware_catalog() -> Path:
+    """Resolve the operator catalog without silently choosing arbitrary firmware."""
+    configured = os.environ.get("RUIJIE_FIRMWARE_CATALOG")
+    candidates = [
+        Path(configured) if configured else None,
+        Path.cwd() / "firmware" / "catalog.json",
+        Path(__file__).resolve().parents[2] / "firmware" / "catalog.json",
+    ]
+    for candidate in candidates:
+        if candidate and candidate.is_file():
+            return candidate
+    _die("Firmware catalog not found. Pass --catalog or set RUIJIE_FIRMWARE_CATALOG.")
+    raise AssertionError("unreachable")
+
+
+def _load_firmware_targets(targets: list[str], from_file: str | None) -> list[str]:
+    """Load explicit hosts from arguments, a JSON inventory, or a text file."""
+    values = list(targets)
+    if not from_file:
+        return _expand_firmware_targets(values)
+
+    path = Path(from_file)
+    text = path.read_text(encoding="utf-8")
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        values.extend(
+            line.strip()
+            for line in text.splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        )
+    else:
+        if not isinstance(data, list):
+            _die("--from-file JSON must be an array")
+        for item in data:
+            if isinstance(item, str):
+                values.append(item)
+                continue
+            if isinstance(item, dict):
+                target = (
+                    item.get("ip")
+                    or item.get("management_ip")
+                    or item.get("managementIp")
+                    or item.get("local_ip")
+                    or item.get("localIp")
+                )
+                if target:
+                    values.append(str(target))
+
+    return _expand_firmware_targets(values)
+
+
+def _expand_firmware_targets(values: list[str], *, max_targets: int = 1024) -> list[str]:
+    """Expand explicit targets and bounded IPv4/IPv6 CIDRs."""
+    expanded: list[str] = []
+    for raw_value in values:
+        value = raw_value.strip()
+        if not value:
+            continue
+        if "://" not in value and "/" in value:
+            try:
+                network = ipaddress.ip_network(value, strict=False)
+            except ValueError:
+                expanded.append(value)
+                continue
+            hosts = list(network.hosts())
+            if len(hosts) > max_targets:
+                raise ValueError(
+                    f"CIDR {value} has {len(hosts)} hosts; the safety limit is {max_targets}"
+                )
+            expanded.extend(str(host) for host in hosts)
+        else:
+            expanded.append(value)
+
+    unique = list(dict.fromkeys(expanded))
+    if len(unique) > max_targets:
+        raise ValueError(f"target list has {len(unique)} hosts; the safety limit is {max_targets}")
+    return unique
+
+
+def cmd_firmware_scan(args: argparse.Namespace) -> None:
+    """Identify local devices and report exact catalog upgrade decisions."""
+    from pyruijie.firmware import FirmwareCatalog, FirmwareCatalogError, scan_firmware
+
+    catalog_path = Path(args.catalog) if args.catalog else _default_firmware_catalog()
+    try:
+        catalog = FirmwareCatalog.load(catalog_path)
+        targets = _load_firmware_targets(args.targets, args.from_file)
+    except (FirmwareCatalogError, OSError, ValueError) as exc:
+        _die(str(exc))
+    if not targets:
+        _die("No targets found. Pass IP addresses or --from-file.")
+
+    results = scan_firmware(
+        targets,
+        catalog=catalog,
+        timeout=args.timeout,
+        workers=args.workers,
+    )
+    if args.json:
+        print(json.dumps([result.to_dict() for result in results], indent=2))
+        return
+
+    print(f"Firmware catalog: {catalog_path}")
+    print(f"Targets: {len(results)}\n")
+    print(f"  {'Target':<24} {'Model':<14} {'Status':<18} Version")
+    print(f"  {'-' * 24} {'-' * 14} {'-' * 18} {'-' * 40}")
+    for result in results:
+        print(
+            f"  {result.target:<24} {(result.model or '-'):<14} "
+            f"{result.status:<18} {result.version or '-'}"
+        )
+        if result.target_version:
+            readiness = "image verified" if result.upload_ready else "image not registered"
+            print(f"    target: {result.target_version} ({readiness})")
+        if result.status not in {"compliant"}:
+            print(f"    reason: {result.reason}")
+
+    counts: dict[str, int] = {}
+    for result in results:
+        counts[result.status] = counts.get(result.status, 0) + 1
+    summary = ", ".join(f"{name}={count}" for name, count in sorted(counts.items()))
+    print(f"\nSummary: {summary}")
+
+
+def cmd_firmware_verify(args: argparse.Namespace) -> None:
+    """Verify repository images against the catalog's SHA-256 pins."""
+    from pyruijie.firmware import FirmwareCatalog, FirmwareCatalogError
+
+    catalog_path = Path(args.catalog) if args.catalog else _default_firmware_catalog()
+    repository = Path(args.repository) if args.repository else catalog_path.parent
+    try:
+        results = FirmwareCatalog.load(catalog_path).verify_repository(repository)
+    except (FirmwareCatalogError, OSError) as exc:
+        _die(str(exc))
+
+    if args.json:
+        print(json.dumps(results, indent=2))
+        return
+    print(f"Firmware catalog: {catalog_path}")
+    print(f"Repository: {repository}\n")
+    for item in results:
+        status = "OK" if item["valid"] else "BLOCKED"
+        print(f"  [{status}] {item['artifact_id']}: {item['reason']}")
+
+    if not all(item["valid"] for item in results):
+        print("\nNo upload is permitted until every selected artifact is checksum verified.")
 
 
 # ── Peer commands ─────────────────────────────────────────────────────
@@ -562,7 +715,7 @@ def _confirm(prompt: str) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="pyruijie",
-        description="WireGuard VPN management for Ruijie/Reyee gateways",
+        description="Ruijie/Reyee cloud, gateway, and firmware management",
     )
     parser.add_argument(
         "-v",
@@ -578,6 +731,56 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     sub = parser.add_subparsers(dest="command", required=True)
+
+    # ── firmware ───────────────────────────────────────────────────
+    firmware = sub.add_parser(
+        "firmware",
+        help="Audit local device firmware against approved model-specific paths",
+    )
+    firmware_sub = firmware.add_subparsers(dest="firmware_action", required=True)
+
+    firmware_scan = firmware_sub.add_parser(
+        "scan",
+        help="Read EST login pages and identify devices requiring an approved update",
+    )
+    firmware_scan.add_argument(
+        "targets",
+        nargs="*",
+        help="Device IP addresses, HTTP URLs, or bounded CIDRs",
+    )
+    firmware_scan.add_argument(
+        "--from-file",
+        help="Text or JSON inventory containing IP addresses",
+    )
+    firmware_scan.add_argument(
+        "--catalog",
+        help="Firmware catalog JSON (default: RUIJIE_FIRMWARE_CATALOG or ./firmware/catalog.json)",
+    )
+    firmware_scan.add_argument("--timeout", type=float, default=5.0, help="Per-device timeout")
+    firmware_scan.add_argument(
+        "--workers",
+        type=int,
+        default=8,
+        help="Concurrent read-only probes",
+    )
+    firmware_scan.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+    firmware_scan.set_defaults(func=cmd_firmware_scan)
+
+    firmware_verify = firmware_sub.add_parser(
+        "verify",
+        help="Verify local firmware files against catalog SHA-256 pins",
+    )
+    firmware_verify.add_argument("--catalog", help="Firmware catalog JSON")
+    firmware_verify.add_argument(
+        "--repository",
+        help="Firmware image directory (default: catalog directory)",
+    )
+    firmware_verify.add_argument(
+        "--json",
+        action="store_true",
+        help="Output machine-readable JSON",
+    )
+    firmware_verify.set_defaults(func=cmd_firmware_verify)
 
     # ── peers ──────────────────────────────────────────────────────
     peers = sub.add_parser("peers", help="Manage hub WireGuard peers")
