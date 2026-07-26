@@ -14,6 +14,7 @@ from pyruijie.cli import (
     OnboardingResult,
     WireGuardSiteLink,
     _load_dotenv,
+    _load_firmware_targets,
     _update_single_endpoint,
     build_parser,
     main,
@@ -147,6 +148,29 @@ class TestBuildParser:
         args = parser.parse_args(["probe", "203.0.113.105"])
         assert args.ip == "203.0.113.105"
 
+    def test_firmware_scan(self):
+        parser = build_parser()
+        args = parser.parse_args(
+            [
+                "firmware",
+                "scan",
+                "10.40.4.7",
+                "--catalog",
+                "firmware/catalog.json",
+                "--json",
+            ]
+        )
+        assert args.command == "firmware"
+        assert args.firmware_action == "scan"
+        assert args.targets == ["10.40.4.7"]
+        assert args.json is True
+
+    def test_firmware_verify(self):
+        parser = build_parser()
+        args = parser.parse_args(["firmware", "verify", "--repository", "firmware"])
+        assert args.firmware_action == "verify"
+        assert args.repository == "firmware"
+
     def test_update_endpoint(self):
         parser = build_parser()
         args = parser.parse_args(
@@ -233,6 +257,18 @@ class TestBuildParser:
         parser = build_parser()
         args = parser.parse_args(["--env-file", "/tmp/.env", "peers", "list"])
         assert args.env_file == "/tmp/.env"
+
+
+def test_firmware_target_loader_expands_bounded_cidr():
+    assert _load_firmware_targets(["192.0.2.0/30"], None) == [
+        "192.0.2.1",
+        "192.0.2.2",
+    ]
+
+
+def test_firmware_target_loader_rejects_excessive_cidr():
+    with pytest.raises(ValueError, match="safety limit"):
+        _load_firmware_targets(["10.0.0.0/8"], None)
 
 
 # ── dotenv loader tests ───────────────────────────────────────────────
