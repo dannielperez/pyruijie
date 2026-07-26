@@ -36,10 +36,17 @@ import requests
 import urllib3
 
 from pyruijie.exceptions import RuijieApiError, RuijieAuthError
+from pyruijie.utils import _sanitize_url, redact_payload
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
+
+
+def _sanitize_request_exception(exc: requests.RequestException) -> str:
+    """Sanitize request exception text, including its chained representation."""
+    exc.args = tuple(_sanitize_url(str(value)) for value in exc.args)
+    return _sanitize_url(str(exc))
 
 
 class GatewayClient:
@@ -112,7 +119,8 @@ class GatewayClient:
             )
             r.raise_for_status()
         except requests.RequestException as exc:
-            raise RuijieAuthError(f"Login request failed for {self.host}: {exc}") from exc
+            message = _sanitize_request_exception(exc)
+            raise RuijieAuthError(f"Login request failed for {self.host}: {message}") from exc
 
         data = r.json()
         if data.get("data") is None:
@@ -164,7 +172,7 @@ class GatewayClient:
             "params": params,
         }
 
-        logger.debug("CMD %s %s data=%s", method, module, data)
+        logger.debug("CMD %s %s data=%s", method, module, redact_payload(data))
 
         try:
             r = self._session.post(
@@ -173,12 +181,14 @@ class GatewayClient:
                 timeout=timeout or self.timeout,
             )
             r.raise_for_status()
-        except requests.exceptions.ReadTimeout:
+        except requests.exceptions.ReadTimeout as exc:
             # Timeouts on config updates usually mean the gateway is applying
             # the change.  Callers should handle this explicitly.
+            _sanitize_request_exception(exc)
             raise
         except requests.RequestException as exc:
-            raise RuijieApiError(f"Request failed: {exc}") from exc
+            message = _sanitize_request_exception(exc)
+            raise RuijieApiError(f"Request failed: {message}") from exc
 
         return r.json()
 

@@ -1,6 +1,47 @@
-"""Tests for pyruijie.utils — MAC normalization and helpers."""
+"""Tests for pyruijie.utils — normalization and redaction helpers."""
 
-from pyruijie.utils import format_mac
+from pyruijie.utils import format_mac, redact_payload
+
+
+def test_redact_payload_masks_nested_credential_keys_and_preserves_safe_fields():
+    payload = {
+        "operation": "configure",
+        "peers": [
+            {
+                "name": "synthetic-peer",
+                "local_privkey": "SYNTHETIC-PRIVKEY-AAAA",
+                "nested": {
+                    "localPrivkey": "SYNTHETIC-PRIVKEY-BBBB",
+                    "preshared_key": "SYNTHETIC-PSK-CCCC",
+                    "presharedkey": "SYNTHETIC-PSK-DDDD",
+                    "endpoint": "192.0.2.10:51820",
+                },
+            }
+        ],
+        "private_key": "SYNTHETIC-PRIVKEY-EEEE",
+        "password": "SYNTHETIC-PASSWORD-FFFF",
+        "apiToken": "SYNTHETIC-TOKEN-GGGG",
+        "auth": "SYNTHETIC-AUTH-HHHH",
+        "sid": "SYNTHETIC-SID-IIII",
+        "psk": "SYNTHETIC-PSK-JJJJ",
+    }
+
+    redacted = redact_payload(payload)
+
+    assert redacted["operation"] == "configure"
+    assert redacted["peers"][0]["name"] == "synthetic-peer"
+    assert redacted["peers"][0]["nested"]["endpoint"] == "192.0.2.10:51820"
+    assert redacted["peers"][0]["local_privkey"] == "***"
+    assert redacted["peers"][0]["nested"]["localPrivkey"] == "***"
+    assert redacted["peers"][0]["nested"]["preshared_key"] == "***"
+    assert redacted["peers"][0]["nested"]["presharedkey"] == "***"
+    assert redacted["private_key"] == "***"
+    assert redacted["password"] == "***"
+    assert redacted["apiToken"] == "***"
+    assert redacted["auth"] == "***"
+    assert redacted["sid"] == "***"
+    assert redacted["psk"] == "***"
+    assert payload["peers"][0]["local_privkey"] == "SYNTHETIC-PRIVKEY-AAAA"
 
 
 class TestFormatMac:

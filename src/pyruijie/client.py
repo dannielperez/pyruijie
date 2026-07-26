@@ -11,8 +11,7 @@ import httpx
 
 from pyruijie.exceptions import APIError, AuthenticationError, ConnectionError
 from pyruijie.models import ClientDevice, Device, GatewayPort, Project, SwitchPort
-
-_REDACT_PARAMS = frozenset({"access_token", "token", "secret"})
+from pyruijie.utils import _sanitize_url
 
 # Refresh tokens this many seconds before they actually expire.
 _EXPIRY_BUFFER_SECONDS = 60
@@ -52,17 +51,6 @@ def clear_token_cache() -> None:
     """Drop all cached tokens (test isolation / forced global re-auth)."""
     with _TOKEN_CACHE_LOCK:
         _TOKEN_CACHE.clear()
-
-
-def _sanitize_url(text: str) -> str:
-    """Remove sensitive query parameters from URLs embedded in error messages."""
-    import re
-
-    return re.sub(
-        r"(" + "|".join(_REDACT_PARAMS) + r")=[^&'\s]+",
-        r"\1=***",
-        text,
-    )
 
 
 DEFAULT_BASE_URL = "https://cloud-us.ruijienetworks.com"

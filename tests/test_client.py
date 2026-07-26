@@ -947,12 +947,27 @@ class TestSanitizeUrl:
         assert "access_token=***" in result
 
     def test_strips_multiple_params(self):
-        url = "https://example.com/api?token=TOK&access_token=ACC&secret=SEC&other=safe"
+        url = (
+            "https://example.com/api?token=TOK&access_token=ACC&secret=SEC"
+            "&auth=AUTH&sid=SID&other=safe"
+        )
         result = _sanitize_url(url)
         assert "TOK" not in result
         assert "ACC" not in result
         assert "SEC" not in result
+        assert "AUTH" not in result
+        assert "SID" not in result
+        assert "token=***" in result
+        assert "access_token=***" in result
+        assert "secret=***" in result
+        assert "auth=***" in result
+        assert "sid=***" in result
         assert "other=safe" in result
+
+    def test_stops_at_parameter_delimiters(self):
+        text = "auth=AUTH-VALUE&safe=visible sid=SID-VALUE'quoted"
+        result = _sanitize_url(text)
+        assert result == "auth=***&safe=visible sid=***'quoted"
 
     def test_preserves_clean_url(self):
         url = "https://example.com/api?group_id=123&page=1"
