@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Read-only EST bridge firmware recognition from the unauthenticated local
+  login page, exact model/version policy evaluation, concurrent fleet scans,
+  and `pyruijie firmware scan`.
+- A controlled firmware catalog/repository skeleton with model-specific
+  source-to-target paths and SHA-256-gated `pyruijie firmware verify`. The
+  initial policy recognizes EST100-E B11P96 as requiring the known-good
+  B11P320 cloud-compatibility target; the image remains metadata-only until an
+  authorized binary and checksum are registered.
 - `RuijieClient.get_fleet_devices()` fetches the hierarchy once, paginates the
   device endpoint from the account root, and resolves each device to its nearest
   building/project locally, avoiding one API request sequence per project.
@@ -30,12 +38,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   authentication and authenticated-request boundaries.
 - Fleet pagination validates `totalCount`, rejects repeated/inconsistent pages,
   and enforces page-count and aggregate-time bounds before returning a snapshot.
-- Fleet snapshot authentication now shares the aggregate deadline and deducts
-  token-refresh time from each subsequent request timeout.
-- Fleet snapshots resolve the root group ID from Ruijie response-envelope and
-  synthetic-wrapper variants while rejecting ambiguous hierarchies.
-- Device, client, and switch-port pagination now stops at a configurable
-  defensive page limit when an endpoint keeps returning full pages.
 
 ## [0.5.1]
 

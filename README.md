@@ -88,6 +88,37 @@ for c in clients:
         print(f"    Switch: {c.switch_name}")
 ```
 
+## EST Firmware Recognition
+
+EST wireless bridges that predate cloud support can be identified directly on
+the site LAN before they appear as managed Ruijie Cloud devices. The audit is
+read-only: it parses the model and version exposed by the local login page and
+compares the exact pair with a controlled firmware catalog.
+
+```bash
+# Audit explicit bridge IPs
+pyruijie firmware scan 10.40.4.7 10.40.4.10 \
+  --catalog firmware/catalog.json
+
+# Audit a site subnet (bounded to 1,024 targets per invocation)
+pyruijie firmware scan 10.40.4.0/24 \
+  --catalog firmware/catalog.json
+
+# Audit a text file or JSON inventory
+pyruijie firmware scan --from-file bridge-ips.json \
+  --catalog firmware/catalog.json --json
+
+# Verify locally stored images against catalog SHA-256 values
+pyruijie firmware verify --catalog firmware/catalog.json
+```
+
+The policy never assumes that the newest version is the correct image. Each
+source version must have an explicit model-specific target. The initial EST100-E
+policy maps B11P96 to the known-good B11P320 cloud-enablement target, while
+B11P327 and B11P380 are only recognized as versions already observed on
+cloud-managed devices. Upload remains blocked until the exact B11P320 artifact,
+filename, and SHA-256 are registered.
+
 ## Gateway Ports
 
 ```python

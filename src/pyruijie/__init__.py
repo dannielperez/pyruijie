@@ -14,6 +14,16 @@ from pyruijie.exceptions import (
     RuijieWireGuardError,
     RuijieWireGuardValidationError,
 )
+from pyruijie.firmware import (
+    FirmwareArtifact,
+    FirmwareCatalog,
+    FirmwareCatalogError,
+    FirmwareDecision,
+    FirmwareProbeResult,
+    FirmwareRule,
+    probe_firmware,
+    scan_firmware,
+)
 from pyruijie.gateway import GatewayClient
 from pyruijie.models import (
     ClientDevice,
@@ -51,6 +61,15 @@ __all__ = [
     "AuthenticationError",
     "ConnectionError",
     "RuijieError",
+    # Local device firmware inventory/policy
+    "FirmwareArtifact",
+    "FirmwareCatalog",
+    "FirmwareCatalogError",
+    "FirmwareDecision",
+    "FirmwareProbeResult",
+    "FirmwareRule",
+    "probe_firmware",
+    "scan_firmware",
     "ClientDevice",
     "Device",
     "GatewayPort",

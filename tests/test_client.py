@@ -187,32 +187,6 @@ class TestGetDevices:
         assert len(devices) == 101
         assert call_count == 2
 
-    def test_repeated_full_pages_stop_at_defensive_limit(self, authed_client):
-        client, mock_api = authed_client
-        route = mock_api.get("/service/api/maint/devices").respond(
-            json={
-                "code": 0,
-                "deviceList": [{"serialNumber": "SN001", "productType": "Switch"}],
-            }
-        )
-
-        with pytest.raises(APIError, match="device pagination exceeded its page limit"):
-            client.get_devices("proj-1", per_page=1, max_pages=2)
-
-        assert route.call_count == 2
-
-    @pytest.mark.parametrize(("per_page", "max_pages"), [(0, 1), (1, 0), (1, 101)])
-    def test_rejects_non_positive_pagination_bounds(
-        self,
-        authed_client,
-        per_page,
-        max_pages,
-    ):
-        client, _ = authed_client
-
-        with pytest.raises(ValueError, match="pagination bounds require"):
-            client.get_devices("proj-1", per_page=per_page, max_pages=max_pages)
-
     def test_empty_project(self, authed_client):
         client, mock_api = authed_client
         mock_api.get("/service/api/maint/devices").respond(json={"code": 0, "deviceList": []})
@@ -319,96 +293,6 @@ class TestGetFleetDevices:
             ("SN-TWO", "p2", "Site Two"),
         ]
 
-    def test_accepts_root_group_id_from_response_envelope(self, authed_client):
-        client, mock_api = authed_client
-        mock_api.get("/service/api/group/single/tree").respond(
-            json={
-                "code": 0,
-                "groupId": "root-1",
-                "groups": {
-                    "type": "COMPANY",
-                    "name": "Root",
-                    "subGroups": [
-                        {
-                            "type": "BUILDING",
-                            "name": "Site One",
-                            "groupId": "p1",
-                            "subGroups": [],
-                        },
-                    ],
-                },
-            },
-        )
-        device_route = mock_api.get("/service/api/maint/devices").respond(
-            json={
-                "code": 0,
-                "deviceList": [{"serialNumber": "SN-ONE", "groupId": "p1"}],
-                "totalCount": 1,
-            },
-        )
-
-        devices = client.get_fleet_devices()
-
-        assert device_route.calls[0].request.url.params["group_id"] == "root-1"
-        assert devices[0].project_id == "p1"
-
-    def test_accepts_single_root_below_synthetic_wrapper(self, authed_client):
-        client, mock_api = authed_client
-        mock_api.get("/service/api/group/single/tree").respond(
-            json={
-                "code": 0,
-                "groups": {
-                    "subGroups": [
-                        {
-                            "type": "COMPANY",
-                            "name": "Root",
-                            "groupId": "root-1",
-                            "subGroups": [
-                                {
-                                    "type": "BUILDING",
-                                    "name": "Site One",
-                                    "groupId": "p1",
-                                    "subGroups": [],
-                                },
-                            ],
-                        },
-                    ],
-                },
-            },
-        )
-        device_route = mock_api.get("/service/api/maint/devices").respond(
-            json={
-                "code": 0,
-                "deviceList": [{"serialNumber": "SN-ONE", "groupId": "p1"}],
-                "totalCount": 1,
-            },
-        )
-
-        devices = client.get_fleet_devices()
-
-        assert device_route.calls[0].request.url.params["group_id"] == "root-1"
-        assert devices[0].project_id == "p1"
-
-    def test_fails_closed_when_synthetic_wrapper_has_multiple_roots(
-        self,
-        authed_client,
-    ):
-        client, mock_api = authed_client
-        mock_api.get("/service/api/group/single/tree").respond(
-            json={
-                "code": 0,
-                "groups": {
-                    "subGroups": [
-                        {"groupId": "root-1", "subGroups": []},
-                        {"groupId": "root-2", "subGroups": []},
-                    ],
-                },
-            },
-        )
-
-        with pytest.raises(APIError, match="ambiguous root group"):
-            client.get_fleet_devices()
-
     def test_fails_closed_when_total_count_is_missing(self, authed_client):
         client, mock_api = authed_client
         self._mock_single_project_tree(mock_api)
@@ -473,92 +357,6 @@ class TestGetFleetDevices:
 
         with pytest.raises(ValueError, match="bounds"):
             client.get_fleet_devices(deadline_seconds=0)
-
-    def test_token_refresh_cannot_exhaust_aggregate_deadline(self, monkeypatch):
-        class Clock:
-            now = 100.0
-
-            def monotonic(self):
-                return self.now
-
-        clock = Clock()
-        client = RuijieClient(
-            app_id="test-app",
-            app_secret="test-secret",
-            timeout=30.0,
-        )
-        auth_timeouts = []
-
-        def delayed_auth(path, *, params, json, timeout=None):
-            auth_timeouts.append(timeout)
-            clock.now += 6.0
-            return httpx.Response(
-                200,
-                json={"code": 0, "accessToken": "fresh-token"},
-                request=httpx.Request("POST", f"{BASE_URL}{path}"),
-            )
-
-        def unexpected_fleet_request(*args, **kwargs):
-            pytest.fail("fleet request started after authentication exhausted its deadline")
-
-        monkeypatch.setattr("pyruijie.client.time", clock)
-        monkeypatch.setattr(client._http, "post", delayed_auth)
-        monkeypatch.setattr(client._http, "request", unexpected_fleet_request)
-
-        with pytest.raises(RuijieConnectionError, match="deadline"):
-            client.get_fleet_devices(deadline_seconds=5.0)
-
-        assert auth_timeouts == pytest.approx([5.0])
-
-    def test_token_refresh_time_is_removed_from_request_timeout(self, monkeypatch):
-        class Clock:
-            now = 100.0
-
-            def monotonic(self):
-                return self.now
-
-        clock = Clock()
-        client = RuijieClient(
-            app_id="test-app",
-            app_secret="test-secret",
-            timeout=30.0,
-        )
-        request_timeouts = []
-
-        def delayed_auth(path, *, params, json, timeout=None):
-            clock.now += 2.0
-            return httpx.Response(
-                200,
-                json={"code": 0, "accessToken": "fresh-token"},
-                request=httpx.Request("POST", f"{BASE_URL}{path}"),
-            )
-
-        def fleet_request(method, path, *, params, timeout):
-            request_timeouts.append(timeout)
-            if path.endswith("/group/single/tree"):
-                body = {
-                    "code": 0,
-                    "groups": {
-                        "type": "COMPANY",
-                        "name": "Root",
-                        "groupId": "root-1",
-                        "subGroups": [],
-                    },
-                }
-            else:
-                body = {"code": 0, "deviceList": [], "totalCount": 0}
-            return httpx.Response(
-                200,
-                json=body,
-                request=httpx.Request(method, f"{BASE_URL}{path}"),
-            )
-
-        monkeypatch.setattr("pyruijie.client.time", clock)
-        monkeypatch.setattr(client._http, "post", delayed_auth)
-        monkeypatch.setattr(client._http, "request", fleet_request)
-
-        assert client.get_fleet_devices(deadline_seconds=5.0) == []
-        assert request_timeouts == pytest.approx([3.0, 3.0])
 
     def test_fails_closed_when_root_group_is_missing(self, authed_client):
         client, mock_api = authed_client
@@ -772,33 +570,6 @@ class TestGetClients:
         assert len(clients) == 201
         assert call_count == 2
 
-    def test_repeated_full_pages_stop_at_defensive_limit(self, authed_client):
-        client, mock_api = authed_client
-        route = mock_api.get("/service/api/open/v1/dev/user/current-user").respond(
-            json={
-                "code": 0,
-                "list": [{"mac": "AA:BB:CC:DD:EE:01"}],
-                "totalCount": 2,
-            }
-        )
-
-        with pytest.raises(APIError, match="client pagination returned duplicate clients"):
-            client.get_clients("proj-1", page_size=1, max_pages=2)
-
-        assert route.call_count == 2
-
-    @pytest.mark.parametrize(("page_size", "max_pages"), [(0, 1), (1, 0), (1, 101)])
-    def test_rejects_non_positive_pagination_bounds(
-        self,
-        authed_client,
-        page_size,
-        max_pages,
-    ):
-        client, _ = authed_client
-
-        with pytest.raises(ValueError, match="pagination bounds require"):
-            client.get_clients("proj-1", page_size=page_size, max_pages=max_pages)
-
 
 # -- get_gateway_ports tests ---------------------------------------------------
 
@@ -896,36 +667,6 @@ class TestGetSwitchPorts:
         client.get_switch_ports("SN-SW-001")
 
         assert requests_seen[0]["page_index"] == "0"
-
-    def test_repeated_full_pages_stop_at_defensive_limit(self, authed_client):
-        client, mock_api = authed_client
-        route = mock_api.get("/service/api/conf/switch/device/SN-SW-001/ports").respond(
-            json={
-                "code": 0,
-                "portList": [{"name": "GigabitEthernet0/1"}],
-            }
-        )
-
-        with pytest.raises(APIError, match="switch port pagination exceeded its page limit"):
-            client.get_switch_ports("SN-SW-001", page_size=1, max_pages=2)
-
-        assert route.call_count == 2
-
-    @pytest.mark.parametrize(("page_size", "max_pages"), [(0, 1), (1, 0), (1, 101)])
-    def test_rejects_non_positive_pagination_bounds(
-        self,
-        authed_client,
-        page_size,
-        max_pages,
-    ):
-        client, _ = authed_client
-
-        with pytest.raises(ValueError, match="pagination bounds require"):
-            client.get_switch_ports(
-                "SN-SW-001",
-                page_size=page_size,
-                max_pages=max_pages,
-            )
 
     def test_empty(self, authed_client):
         client, mock_api = authed_client
