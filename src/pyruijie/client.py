@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import threading
 import time
@@ -38,12 +39,21 @@ _MAX_LEGACY_PAGES = 100
 # rate limits (throttling the entire fleet's monitoring). This cache lets a
 # fresh instance reuse a still-valid token minted by a sibling instance.
 #
-# Keyed by (base_url, app_id, api_token) — the identity the token is scoped to.
-# Values are (access_token, expires_at monotonic seconds). Guarded by a lock so
-# the dict stays consistent under a threaded worker pool. A rotated secret/token
-# is not reflected until the cached token expires (<= its TTL) or
-# ``invalidate()`` is called — acceptable for the token lifetimes in play.
-_TOKEN_CACHE: dict[tuple[str, str, str], tuple[str, float]] = {}
+# Keyed by (base_url, app_id, api_token, app_secret_sha256) — the identity the
+# token is scoped to. The app secret is stored only as a digest so this
+# process-wide key never retains a plaintext credential reachable from a REPL,
+# heap dump, or debugger. Values are (access_token, expires_at monotonic
+# seconds). Guarded by a lock so the dict stays consistent under a threaded
+# worker pool.
+#
+# Because every credential now participates in the key, rotating either the
+# secret or the api_token yields a *different* key, so a token minted under the
+# old credential can never be served after a rotation. This replaces the earlier
+# caveat that a rotation was not reflected until the cached token expired —
+# which also meant an unforced caller could succeed against a WRONG secret for
+# up to the token TTL, and two accounts sharing app_id+api_token with different
+# secrets bled tokens across each other.
+_TOKEN_CACHE: dict[tuple[str, str, str, str], tuple[str, float]] = {}
 _TOKEN_CACHE_LOCK = threading.Lock()
 
 
@@ -132,8 +142,9 @@ class RuijieClient:
     # -- authentication --------------------------------------------------------
 
     @property
-    def _cache_key(self) -> tuple[str, str, str]:
-        return (self._base_url, self._app_id, self._api_token or "")
+    def _cache_key(self) -> tuple[str, str, str, str]:
+        secret_digest = hashlib.sha256((self._app_secret or "").encode("utf-8")).hexdigest()
+        return (self._base_url, self._app_id, self._api_token or "", secret_digest)
 
     def authenticate(
         self,

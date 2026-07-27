@@ -1,10 +1,12 @@
 """Tests for RuijieClient."""
 
+import hashlib
+
 import httpx
 import pytest
 
 from pyruijie import RuijieClient
-from pyruijie.client import _sanitize_url
+from pyruijie.client import _TOKEN_CACHE, _sanitize_url
 from pyruijie.exceptions import APIError, AuthenticationError
 from pyruijie.exceptions import ConnectionError as RuijieConnectionError
 
@@ -57,6 +59,64 @@ class TestAuthenticate:
         )
         client = RuijieClient(app_id="a", app_secret="s", api_token="explicit-token")
         assert client.authenticate() == "tok-xyz"
+
+    def test_different_app_secrets_do_not_share_cached_token(self, mock_api):
+        auth_route = mock_api.post("/service/api/oauth20/client/access_token").mock(
+            side_effect=[
+                httpx.Response(200, json={"code": 0, "accessToken": "token-a"}),
+                httpx.Response(200, json={"code": 0, "accessToken": "token-b"}),
+            ]
+        )
+        first = RuijieClient(
+            app_id="shared-app",
+            app_secret="secret-a",
+            api_token="shared-api-token",
+        )
+        second = RuijieClient(
+            app_id="shared-app",
+            app_secret="secret-b",
+            api_token="shared-api-token",
+        )
+
+        assert first.authenticate() == "token-a"
+        assert second.authenticate() == "token-b"
+        assert auth_route.call_count == 2
+
+    def test_identical_credentials_share_cached_token(self, mock_api):
+        auth_route = mock_api.post("/service/api/oauth20/client/access_token").respond(
+            json={"code": 0, "accessToken": "shared-token"}
+        )
+        first = RuijieClient(
+            app_id="shared-app",
+            app_secret="secret-a",
+            api_token="shared-api-token",
+        )
+        second = RuijieClient(
+            app_id="shared-app",
+            app_secret="secret-a",
+            api_token="shared-api-token",
+        )
+
+        assert first.authenticate() == "shared-token"
+        assert second.authenticate() == "shared-token"
+        assert auth_route.call_count == 1
+
+    def test_cache_key_contains_app_secret_digest_not_plaintext(self, mock_api):
+        secret = "secret-a"
+        mock_api.post("/service/api/oauth20/client/access_token").respond(
+            json={"code": 0, "accessToken": "tok-123"}
+        )
+        client = RuijieClient(
+            app_id="test-app",
+            app_secret=secret,
+            api_token="test-api-token",
+        )
+
+        client.authenticate()
+
+        assert all(secret not in element for key in _TOKEN_CACHE for element in key)
+        cache_key = next(iter(_TOKEN_CACHE))
+        assert cache_key[3] == hashlib.sha256(secret.encode("utf-8")).hexdigest()
 
     def test_auto_auth_on_first_request(self, mock_api):
         mock_api.post("/service/api/oauth20/client/access_token").respond(
