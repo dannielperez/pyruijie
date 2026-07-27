@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -25,6 +26,12 @@ class TestGatewayClientInit:
 
     def test_repr_not_authenticated(self, client: GatewayClient):
         assert "not authenticated" in repr(client)
+
+    def test_repr_does_not_include_session_id(self, client: GatewayClient):
+        client._sid = "SYNTHETIC-SID-AAAA"
+
+        assert "authenticated" in repr(client)
+        assert "SYNTHETIC-SID-AAAA" not in repr(client)
 
 
 class TestGatewayClientLogin:
@@ -94,6 +101,64 @@ class TestGatewayClientCmd:
 
         ids = [c[1]["json"]["id"] for c in mock_post.call_args_list]
         assert ids[1] > ids[0]
+
+    def test_cmd_redacts_session_id_from_request_exception(self, client: GatewayClient):
+        session_id = "SYNTHETIC-SID-BBBB"
+        client._sid = session_id
+        request_error = requests.RequestException(
+            f"failed for https://gateway.test/cgi-bin/luci/api/cmd?auth={session_id}&mode=config"
+        )
+
+        with (
+            patch.object(client._session, "post", side_effect=request_error),
+            pytest.raises(RuijieApiError) as exc_info,
+        ):
+            client.cmd("devConfig.update", "wireguard")
+
+        assert session_id not in str(exc_info.value)
+        assert "auth=***" in str(exc_info.value)
+        assert session_id not in str(exc_info.value.__cause__)
+
+    def test_cmd_redacts_session_id_from_read_timeout(self, client: GatewayClient):
+        session_id = "SYNTHETIC-SID-CCCC"
+        client._sid = session_id
+        timeout_error = requests.exceptions.ReadTimeout(
+            f"timed out for https://gateway.test/cgi-bin/luci/api/cmd?auth={session_id}"
+        )
+
+        with (
+            patch.object(client._session, "post", side_effect=timeout_error),
+            pytest.raises(requests.exceptions.ReadTimeout) as exc_info,
+        ):
+            client.cmd("devConfig.update", "wireguard")
+
+        assert session_id not in str(exc_info.value)
+        assert "auth=***" in str(exc_info.value)
+
+    def test_cmd_redacts_mutation_payload_debug_log(
+        self,
+        client: GatewayClient,
+        caplog,
+    ):
+        client._sid = "SYNTHETIC-SID-DDDD"
+        private_key = "SYNTHETIC-PRIVKEY-DDDD"
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"data": {"rcode": "00000000"}}
+        mock_resp.raise_for_status = MagicMock()
+        caplog.set_level(logging.DEBUG, logger="pyruijie.gateway")
+
+        with patch.object(client._session, "post", return_value=mock_resp):
+            client.cmd(
+                "devConfig.update",
+                "wireguard",
+                {"peer": {"local_privkey": private_key}, "enabled": True},
+            )
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert all(private_key not in message for message in messages)
+        assert any(
+            "devConfig.update" in message and "wireguard" in message for message in messages
+        )
 
 
 class TestGatewayClientCmdChecked:
