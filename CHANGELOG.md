@@ -38,6 +38,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   authentication and authenticated-request boundaries.
 - Fleet pagination validates `totalCount`, rejects repeated/inconsistent pages,
   and enforces page-count and aggregate-time bounds before returning a snapshot.
+- Fleet snapshot authentication now shares the aggregate deadline and deducts
+  token-refresh time from each subsequent request timeout.
+- Fleet snapshots resolve the root group ID from Ruijie response-envelope and
+  synthetic-wrapper variants while rejecting ambiguous hierarchies.
+- Device, client, and switch-port pagination now stops at a configurable
+  defensive page limit when an endpoint keeps returning full pages.
 
 ## [0.5.1]
 
