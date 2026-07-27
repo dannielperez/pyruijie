@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 import threading
 import time
@@ -24,7 +25,7 @@ _EXPIRY_BUFFER_SECONDS = 60
 # re-auth storm. Override with the ``token_ttl`` constructor argument or the
 # ``RUIJIE_TOKEN_TTL_SECONDS`` environment variable.
 _DEFAULT_TOKEN_TTL_SECONDS = 1800.0
-_DEFAULT_FLEET_DEADLINE_SECONDS = 360.0
+_DEFAULT_LIST_DEADLINE_SECONDS = 360.0
 _DEFAULT_FLEET_MAX_PAGES = 100
 _MAX_LEGACY_PAGES = 100
 
@@ -208,9 +209,7 @@ class RuijieClient:
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
             raise AuthenticationError(f"HTTP {exc.response.status_code} during auth") from exc
-        except httpx.ConnectError as exc:
-            raise ConnectionError(_sanitize_url(str(exc))) from exc
-        except httpx.TimeoutException as exc:
+        except httpx.TransportError as exc:
             raise ConnectionError(_sanitize_url(str(exc))) from exc
 
         data = resp.json()
@@ -258,8 +257,8 @@ class RuijieClient:
         if deadline is None:
             self._ensure_auth()
         else:
-            self._ensure_auth(timeout=self._fleet_request_timeout(deadline))
-            kwargs["timeout"] = self._fleet_request_timeout(deadline)
+            self._ensure_auth(timeout=self._request_timeout_for_deadline(deadline))
+            kwargs["timeout"] = self._request_timeout_for_deadline(deadline)
 
         params = kwargs.pop("params", {})
         params["access_token"] = self._access_token
@@ -267,6 +266,8 @@ class RuijieClient:
         try:
             resp = self._http.request(method, path, params=params, **kwargs)
             resp.raise_for_status()
+            if deadline is not None:
+                self._request_timeout_for_deadline(deadline)
         except httpx.HTTPStatusError as exc:
             msg = _sanitize_url(str(exc))
             if exc.response.status_code == 404:
@@ -276,9 +277,7 @@ class RuijieClient:
                     "account or region."
                 )
             raise APIError(exc.response.status_code, msg) from exc
-        except httpx.ConnectError as exc:
-            raise ConnectionError(_sanitize_url(str(exc))) from exc
-        except httpx.TimeoutException as exc:
+        except httpx.TransportError as exc:
             raise ConnectionError(_sanitize_url(str(exc))) from exc
 
         data: dict[str, Any] = resp.json()
@@ -350,28 +349,37 @@ class RuijieClient:
             raise APIError(-1, "Ruijie group tree response is not an object")
         return groups, data
 
-    def get_projects(self) -> list[Project]:
+    def get_projects(
+        self,
+        *,
+        deadline_seconds: float = _DEFAULT_LIST_DEADLINE_SECONDS,
+    ) -> list[Project]:
         """Return all projects (building-level groups) from Ruijie Cloud.
 
         Projects correspond to physical sites/buildings in the Ruijie
         Cloud hierarchy.  Use ``project.group_id`` as the key for
         subsequent ``get_devices()`` and ``get_clients()`` calls.
 
+        Args:
+            deadline_seconds: Aggregate hierarchy-list deadline.
+
         Returns:
             List of :class:`~pyruijie.Project` instances.
 
         Raises:
             APIError: If the API returns a non-zero error code.
-            ConnectionError: If the API is unreachable.
+            ConnectionError: If the API is unreachable or the deadline expires.
+            ValueError: If the deadline is not positive and finite.
         """
-        return self._collect_projects(self._get_group_tree())
+        deadline = self._list_deadline(deadline_seconds)
+        return self._collect_projects(self._get_group_tree(deadline=deadline))
 
     def get_fleet_devices(
         self,
         *,
         per_page: int = 100,
         max_pages: int = _DEFAULT_FLEET_MAX_PAGES,
-        deadline_seconds: float = _DEFAULT_FLEET_DEADLINE_SECONDS,
+        deadline_seconds: float = _DEFAULT_LIST_DEADLINE_SECONDS,
     ) -> list[Device]:
         """Return all account devices with their owning building/project.
 
@@ -396,10 +404,13 @@ class RuijieClient:
             ConnectionError: If transport fails or the aggregate deadline expires.
             ValueError: If a pagination bound is not positive.
         """
-        if per_page < 1 or max_pages < 1 or deadline_seconds <= 0:
-            raise ValueError("Fleet pagination bounds must be positive")
+        if per_page < 1 or not 1 <= max_pages <= _DEFAULT_FLEET_MAX_PAGES:
+            raise ValueError(
+                "Fleet pagination bounds require a positive page size "
+                f"and max_pages no greater than {_DEFAULT_FLEET_MAX_PAGES}"
+            )
 
-        deadline = time.monotonic() + deadline_seconds
+        deadline = self._list_deadline(deadline_seconds)
         groups, data = self._get_group_tree_response(deadline=deadline)
         root_group_id = self._resolve_root_group_id(groups, data)
 
@@ -489,12 +500,19 @@ class RuijieClient:
 
         raise APIError(-1, "Ruijie fleet pagination exceeded its page limit")
 
-    def _fleet_request_timeout(self, deadline: float) -> float:
-        """Cap the next request so the fleet operation respects its deadline."""
+    def _request_timeout_for_deadline(self, deadline: float) -> float:
+        """Cap the next request so its enclosing list operation respects its deadline."""
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            raise ConnectionError("Ruijie fleet listing exceeded its deadline")
+            raise ConnectionError("Ruijie list operation exceeded its deadline")
         return min(self._request_timeout, remaining)
+
+    @staticmethod
+    def _list_deadline(deadline_seconds: float) -> float:
+        """Return an absolute deadline after validating the public list bound."""
+        if not math.isfinite(deadline_seconds) or deadline_seconds <= 0:
+            raise ValueError("List bounds require a positive, finite deadline")
+        return time.monotonic() + deadline_seconds
 
     def get_devices(
         self,
@@ -502,6 +520,7 @@ class RuijieClient:
         *,
         per_page: int = 100,
         max_pages: int = _MAX_LEGACY_PAGES,
+        deadline_seconds: float = _DEFAULT_LIST_DEADLINE_SECONDS,
     ) -> list[Device]:
         """Return all managed network devices for a project.
 
@@ -513,6 +532,7 @@ class RuijieClient:
             per_page: Number of devices per API page (matches upstream
                 ``per_page`` parameter name).
             max_pages: Defensive upper bound for vendor page requests.
+            deadline_seconds: Aggregate deadline across every device page.
 
         Returns:
             List of :class:`~pyruijie.Device` instances.
@@ -528,11 +548,13 @@ class RuijieClient:
                 f"and max_pages no greater than {_MAX_LEGACY_PAGES}"
             )
 
+        deadline = self._list_deadline(deadline_seconds)
         all_devices: list[Device] = []
         for page in range(1, max_pages + 1):
             data = self._get(
                 _DEVICES_PATH,
                 {"group_id": project_id, "page": page, "per_page": per_page},
+                deadline=deadline,
             )
             raw_devices = data.get("deviceList", [])
             if not raw_devices:
@@ -549,6 +571,7 @@ class RuijieClient:
         *,
         page_size: int = 200,
         max_pages: int = _MAX_LEGACY_PAGES,
+        deadline_seconds: float = _DEFAULT_LIST_DEADLINE_SECONDS,
     ) -> list[ClientDevice]:
         """Return all connected client devices for a project.
 
@@ -562,6 +585,7 @@ class RuijieClient:
                 ``page_size`` parameter name; default 200 for fewer
                 round-trips).
             max_pages: Defensive upper bound for vendor page requests.
+            deadline_seconds: Aggregate deadline across every client page.
 
         Returns:
             List of :class:`~pyruijie.ClientDevice` instances.
@@ -577,12 +601,14 @@ class RuijieClient:
                 f"and max_pages no greater than {_MAX_LEGACY_PAGES}"
             )
 
+        deadline = self._list_deadline(deadline_seconds)
         all_clients: list[ClientDevice] = []
         seen_macs: set[str] = set()
         for page_index in range(1, max_pages + 1):
             data = self._get(
                 _CLIENTS_PATH,
                 {"group_id": project_id, "page_index": page_index, "page_size": page_size},
+                deadline=deadline,
             )
             raw_clients = data.get("list", [])
             if not raw_clients:
@@ -599,13 +625,19 @@ class RuijieClient:
 
         raise APIError(-1, "Ruijie client pagination exceeded its page limit")
 
-    def get_gateway_ports(self, serial_number: str) -> list[GatewayPort]:
+    def get_gateway_ports(
+        self,
+        serial_number: str,
+        *,
+        deadline_seconds: float = _DEFAULT_LIST_DEADLINE_SECONDS,
+    ) -> list[GatewayPort]:
         """Return WAN/LAN port details for a gateway device.
 
         Corresponds to Ruijie Cloud API 2.6.4.
 
         Args:
             serial_number: Serial number of the gateway device.
+            deadline_seconds: Aggregate port-list deadline.
 
         Returns:
             List of :class:`~pyruijie.GatewayPort` instances.
@@ -614,7 +646,11 @@ class RuijieClient:
             APIError: If the device is not found or the API returns an error.
             ConnectionError: If the API is unreachable.
         """
-        data = self._get(f"{_GATEWAY_PORTS_PATH}/{serial_number}")
+        deadline = self._list_deadline(deadline_seconds)
+        data = self._get(
+            f"{_GATEWAY_PORTS_PATH}/{serial_number}",
+            deadline=deadline,
+        )
         raw_ports = data.get("data", [])
         return [GatewayPort.model_validate(p) for p in raw_ports]
 
@@ -624,6 +660,7 @@ class RuijieClient:
         *,
         page_size: int = 100,
         max_pages: int = _MAX_LEGACY_PAGES,
+        deadline_seconds: float = _DEFAULT_LIST_DEADLINE_SECONDS,
     ) -> list[SwitchPort]:
         """Return port details for a switch device.
 
@@ -637,6 +674,7 @@ class RuijieClient:
             serial_number: Serial number of the switch device.
             page_size: Number of ports per API page.
             max_pages: Defensive upper bound for vendor page requests.
+            deadline_seconds: Aggregate deadline across every switch-port page.
 
         Returns:
             List of :class:`~pyruijie.SwitchPort` instances.
@@ -652,11 +690,13 @@ class RuijieClient:
                 f"and max_pages no greater than {_MAX_LEGACY_PAGES}"
             )
 
+        deadline = self._list_deadline(deadline_seconds)
         all_ports: list[SwitchPort] = []
         for page_index in range(max_pages):
             data = self._get(
                 f"{_SWITCH_PORTS_PATH}/{serial_number}/ports",
                 {"page_size": page_size, "page_index": page_index},
+                deadline=deadline,
             )
             raw_ports = data.get("portList", [])
             if not raw_ports:
