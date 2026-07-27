@@ -12,14 +12,16 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import time
 from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
+from http.client import HTTPException
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlparse
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 _MODEL_PATTERNS = (
     re.compile(r"\bHi,\s*([A-Z][A-Z0-9-]{2,})\b", re.IGNORECASE),
@@ -31,6 +33,73 @@ _VERSION_PATTERN = re.compile(
 )
 _RUIJIE_MARKERS = ("Ruijie Networks", "eweb-est", "cache.htm?v=")
 _MAX_LOGIN_PAGE_BYTES = 512 * 1024
+# Three upgrades are enough for device login-page canonicalization without
+# allowing a compromised device to keep a worker in a redirect loop.
+_MAX_REDIRECT_HOPS = 3
+# Bounded reads limit memory growth and create frequent aggregate-deadline
+# checkpoints even when a peer drip-feeds its response body.
+_LOGIN_PAGE_READ_CHUNK_BYTES = 64 * 1024
+
+
+class _RedirectPolicyError(Exception):
+    """A device redirect violated the firmware-probe containment policy."""
+
+
+class _ContainedRedirectHandler(HTTPRedirectHandler):
+    """Follow only bounded HTTP(S) redirects which retain the target host."""
+
+    def __init__(self, *, target_host: str, deadline: float) -> None:
+        super().__init__()
+        self._target_host = target_host
+        self._deadline = deadline
+        self._redirect_hops = 0
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _validate_contained_url(newurl, target_host=self._target_host)
+        self._redirect_hops += 1
+        if self._redirect_hops > _MAX_REDIRECT_HOPS:
+            raise _RedirectPolicyError("redirect hop limit exceeded")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+    def http_error_302(self, req, fp, code, msg, headers):
+        location = headers.get("location") or headers.get("uri")
+        if location is None:
+            return None
+        newurl = urljoin(req.full_url, location.replace(" ", "%20"))
+        try:
+            redirected_request = self.redirect_request(
+                req,
+                fp,
+                code,
+                msg,
+                headers,
+                newurl,
+            )
+        except Exception:
+            fp.close()
+            raise
+        if redirected_request is None:
+            return None
+
+        # Do not drain an untrusted redirect body: closing it prevents a second
+        # slow-drip surface before opening the next, deadline-bounded hop.
+        fp.close()
+        return self.parent.open(
+            redirected_request,
+            timeout=_remaining_timeout(self._deadline),
+        )
+
+    http_error_301 = http_error_303 = http_error_307 = http_error_308 = http_error_302
+
+
+def _open_request(
+    request: Request,
+    *,
+    timeout: float,
+    redirect_handler: HTTPRedirectHandler,
+):
+    """Open one probe request through the module's patchable transport seam."""
+    return build_opener(redirect_handler).open(request, timeout=timeout)
 
 
 class FirmwareCatalogError(ValueError):
@@ -262,6 +331,7 @@ def probe_firmware(
     timeout: float = 5.0,
 ) -> FirmwareProbeResult:
     """Read the unauthenticated login page and classify its firmware."""
+    deadline = time.monotonic() + timeout
     try:
         url = _target_url(target)
     except ValueError as exc:
@@ -276,16 +346,38 @@ def probe_firmware(
             reason="target is not a valid HTTP device address",
             error=str(exc),
         )
+    target_host = _normalized_url_host(url)
     request = Request(
         url,
         headers={"User-Agent": "pyruijie-firmware-audit/1"},
         method="GET",
     )
     try:
-        with urlopen(request, timeout=timeout) as response:
+        redirect_handler = _ContainedRedirectHandler(
+            target_host=target_host,
+            deadline=deadline,
+        )
+        with _open_request(
+            request,
+            timeout=_remaining_timeout(deadline),
+            redirect_handler=redirect_handler,
+        ) as response:
             final_url = response.geturl()
-            body = response.read(_MAX_LOGIN_PAGE_BYTES + 1)
-    except (HTTPError, URLError, TimeoutError, OSError) as exc:
+            _validate_contained_url(final_url, target_host=target_host)
+            body = _read_login_page(response, deadline=deadline)
+    except _RedirectPolicyError as exc:
+        return FirmwareProbeResult(
+            target=target,
+            url=url,
+            reachable=False,
+            is_ruijie=False,
+            model=None,
+            version=None,
+            status="unreachable",
+            reason=str(exc),
+            error=str(exc),
+        )
+    except (HTTPError, URLError, HTTPException, TimeoutError, OSError) as exc:
         return FirmwareProbeResult(
             target=target,
             url=url,
@@ -420,6 +512,76 @@ def _normalize_sha256(value: str | None) -> str | None:
     if not re.fullmatch(r"[0-9a-f]{64}", normalized):
         raise FirmwareCatalogError("artifact sha256 must be 64 hexadecimal characters")
     return normalized
+
+
+def _normalized_url_host(url: str) -> str:
+    parsed = urlparse(url)
+    try:
+        host = parsed.hostname
+    except ValueError:
+        host = None
+    return host.casefold() if host else ""
+
+
+def _validate_contained_url(url: str, *, target_host: str) -> None:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        raise _RedirectPolicyError(
+            f"redirect left the target host (unsupported scheme {parsed.scheme!r})"
+        )
+    if not target_host or _normalized_url_host(url) != target_host:
+        raise _RedirectPolicyError("redirect left the target host")
+
+
+def _remaining_timeout(deadline: float) -> float:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("firmware probe exceeded its aggregate deadline")
+    return remaining
+
+
+def _set_response_timeout(response: Any, timeout: float) -> None:
+    direct_setter = getattr(response, "settimeout", None)
+    if callable(direct_setter):
+        direct_setter(timeout)
+        return
+
+    # urllib wraps the socket differently across Python and HTTP/HTTPS paths;
+    # these bounded paths cover HTTPResponse and addinfourl without introspecting
+    # arbitrary response attributes.
+    for path in (
+        ("fp", "fp", "raw", "_sock"),
+        ("fp", "raw", "_sock"),
+        ("fp", "_sock"),
+        ("raw", "_sock"),
+        ("_sock",),
+    ):
+        candidate = response
+        for attribute in path:
+            candidate = getattr(candidate, attribute, None)
+            if candidate is None:
+                break
+        setter = getattr(candidate, "settimeout", None)
+        if callable(setter):
+            setter(timeout)
+            return
+    raise OSError("could not enforce aggregate deadline on response body")
+
+
+def _read_login_page(response: Any, *, deadline: float) -> bytes:
+    body = bytearray()
+    while len(body) <= _MAX_LOGIN_PAGE_BYTES:
+        remaining = _remaining_timeout(deadline)
+        _set_response_timeout(response, remaining)
+        amount = min(
+            _LOGIN_PAGE_READ_CHUNK_BYTES,
+            _MAX_LOGIN_PAGE_BYTES + 1 - len(body),
+        )
+        chunk = response.read(amount)
+        if not chunk:
+            break
+        body.extend(chunk)
+    return bytes(body)
 
 
 def _target_url(target: str) -> str:
