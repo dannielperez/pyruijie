@@ -25,6 +25,7 @@ _EXPIRY_BUFFER_SECONDS = 60
 _DEFAULT_TOKEN_TTL_SECONDS = 1800.0
 _DEFAULT_FLEET_DEADLINE_SECONDS = 360.0
 _DEFAULT_FLEET_MAX_PAGES = 100
+_MAX_LEGACY_PAGES = 100
 
 # Process-wide token cache, shared across RuijieClient instances.
 #
@@ -134,7 +135,12 @@ class RuijieClient:
     def _cache_key(self) -> tuple[str, str, str]:
         return (self._base_url, self._app_id, self._api_token or "")
 
-    def authenticate(self, *, force: bool = False) -> str:
+    def authenticate(
+        self,
+        *,
+        force: bool = False,
+        timeout: float | None = None,
+    ) -> str:
         """Authenticate with the Ruijie Cloud API and return the access token.
 
         Called automatically on the first API request if not already
@@ -146,6 +152,8 @@ class RuijieClient:
         Args:
             force: Skip both caches and always mint a fresh token — e.g. a
                 connection tester that must verify credentials live.
+            timeout: Optional timeout for the live token request. Cached tokens
+                do not perform network I/O.
 
         Returns:
             The OAuth2 access token string.
@@ -167,20 +175,24 @@ class RuijieClient:
                     self._access_token, self._expires_at = cached
                     return self._access_token
 
-        return self._fetch_token()
+        return self._fetch_token(timeout=timeout)
 
-    def _fetch_token(self) -> str:
+    def _fetch_token(self, *, timeout: float | None = None) -> str:
         """Mint a fresh token from the auth endpoint and publish it to the cache."""
         if not self._api_token:
             raise AuthenticationError(
                 "No Ruijie Cloud API token configured. Pass api_token=... to "
                 "RuijieClient or set the RUIJIE_API_TOKEN environment variable."
             )
+        request_kwargs: dict[str, Any] = {}
+        if timeout is not None:
+            request_kwargs["timeout"] = timeout
         try:
             resp = self._http.post(
                 _AUTH_PATH,
                 params={"token": self._api_token},
                 json={"appid": self._app_id, "secret": self._app_secret},
+                **request_kwargs,
             )
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
@@ -219,13 +231,24 @@ class RuijieClient:
 
     # -- internal HTTP helpers -------------------------------------------------
 
-    def _ensure_auth(self) -> None:
+    def _ensure_auth(self, *, timeout: float | None = None) -> None:
         if not self._access_token or time.monotonic() >= self._expires_at:
-            self.authenticate()
+            self.authenticate(timeout=timeout)
 
-    def _request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        deadline: float | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
         """Execute an authenticated API request and return the JSON body."""
-        self._ensure_auth()
+        if deadline is None:
+            self._ensure_auth()
+        else:
+            self._ensure_auth(timeout=self._fleet_request_timeout(deadline))
+            kwargs["timeout"] = self._fleet_request_timeout(deadline)
 
         params = kwargs.pop("params", {})
         params["access_token"] = self._access_token
@@ -258,11 +281,12 @@ class RuijieClient:
         params: dict[str, Any] | None = None,
         *,
         timeout: float | None = None,
+        deadline: float | None = None,
     ) -> dict[str, Any]:
         kwargs: dict[str, Any] = {"params": params or {}}
         if timeout is not None:
             kwargs["timeout"] = timeout
-        return self._request("GET", path, **kwargs)
+        return self._request("GET", path, deadline=deadline, **kwargs)
 
     def _post(
         self,
@@ -284,13 +308,36 @@ class RuijieClient:
 
     # -- read-only API methods -------------------------------------------------
 
-    def _get_group_tree(self, *, timeout: float | None = None) -> dict[str, Any]:
+    def _get_group_tree(
+        self,
+        *,
+        timeout: float | None = None,
+        deadline: float | None = None,
+    ) -> dict[str, Any]:
         """Return the validated Ruijie account hierarchy root."""
-        data = self._get(_GROUPS_PATH, {"depth": "DEVICE"}, timeout=timeout)
+        groups, _data = self._get_group_tree_response(
+            timeout=timeout,
+            deadline=deadline,
+        )
+        return groups
+
+    def _get_group_tree_response(
+        self,
+        *,
+        timeout: float | None = None,
+        deadline: float | None = None,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Return both hierarchy groups and their response envelope."""
+        data = self._get(
+            _GROUPS_PATH,
+            {"depth": "DEVICE"},
+            timeout=timeout,
+            deadline=deadline,
+        )
         groups = data.get("groups", {})
         if not isinstance(groups, dict):
             raise APIError(-1, "Ruijie group tree response is not an object")
-        return groups
+        return groups, data
 
     def get_projects(self) -> list[Project]:
         """Return all projects (building-level groups) from Ruijie Cloud.
@@ -342,10 +389,8 @@ class RuijieClient:
             raise ValueError("Fleet pagination bounds must be positive")
 
         deadline = time.monotonic() + deadline_seconds
-        groups = self._get_group_tree(timeout=self._fleet_request_timeout(deadline))
-        root_group_id = str(groups.get("groupId") or "")
-        if not root_group_id:
-            raise APIError(-1, "Ruijie group tree is missing its root group ID")
+        groups, data = self._get_group_tree_response(deadline=deadline)
+        root_group_id = self._resolve_root_group_id(groups, data)
 
         project_by_group: dict[str, Project] = {}
         self._index_group_projects(groups, project_by_group=project_by_group)
@@ -391,7 +436,7 @@ class RuijieClient:
             data = self._get(
                 _DEVICES_PATH,
                 {"group_id": root_group_id, "page": page, "per_page": per_page},
-                timeout=self._fleet_request_timeout(deadline),
+                deadline=deadline,
             )
             raw_devices = data.get("deviceList")
             if not isinstance(raw_devices, list):
@@ -440,7 +485,13 @@ class RuijieClient:
             raise ConnectionError("Ruijie fleet listing exceeded its deadline")
         return min(self._request_timeout, remaining)
 
-    def get_devices(self, project_id: str, *, per_page: int = 100) -> list[Device]:
+    def get_devices(
+        self,
+        project_id: str,
+        *,
+        per_page: int = 100,
+        max_pages: int = _MAX_LEGACY_PAGES,
+    ) -> list[Device]:
         """Return all managed network devices for a project.
 
         Fetches APs, switches, gateways, and other infrastructure devices.
@@ -450,6 +501,7 @@ class RuijieClient:
             project_id: The ``group_id`` of the target project.
             per_page: Number of devices per API page (matches upstream
                 ``per_page`` parameter name).
+            max_pages: Defensive upper bound for vendor page requests.
 
         Returns:
             List of :class:`~pyruijie.Device` instances.
@@ -457,24 +509,36 @@ class RuijieClient:
         Raises:
             APIError: If the API returns a non-zero error code.
             ConnectionError: If the API is unreachable.
+            ValueError: If a pagination bound is not positive.
         """
+        if per_page < 1 or not 1 <= max_pages <= _MAX_LEGACY_PAGES:
+            raise ValueError(
+                "Device pagination bounds require a positive page size "
+                f"and max_pages no greater than {_MAX_LEGACY_PAGES}"
+            )
+
         all_devices: list[Device] = []
-        page = 1
-        while True:
+        for page in range(1, max_pages + 1):
             data = self._get(
                 _DEVICES_PATH,
                 {"group_id": project_id, "page": page, "per_page": per_page},
             )
             raw_devices = data.get("deviceList", [])
             if not raw_devices:
-                break
+                return all_devices
             all_devices.extend(Device.model_validate(d) for d in raw_devices)
             if len(raw_devices) < per_page:
-                break
-            page += 1
-        return all_devices
+                return all_devices
 
-    def get_clients(self, project_id: str, *, page_size: int = 200) -> list[ClientDevice]:
+        raise APIError(-1, "Ruijie device pagination exceeded its page limit")
+
+    def get_clients(
+        self,
+        project_id: str,
+        *,
+        page_size: int = 200,
+        max_pages: int = _MAX_LEGACY_PAGES,
+    ) -> list[ClientDevice]:
         """Return all connected client devices for a project.
 
         Returns devices currently online — phones, laptops, cameras,
@@ -486,6 +550,7 @@ class RuijieClient:
             page_size: Number of clients per API page (matches upstream
                 ``page_size`` parameter name; default 200 for fewer
                 round-trips).
+            max_pages: Defensive upper bound for vendor page requests.
 
         Returns:
             List of :class:`~pyruijie.ClientDevice` instances.
@@ -493,23 +558,35 @@ class RuijieClient:
         Raises:
             APIError: If the API returns a non-zero error code.
             ConnectionError: If the API is unreachable.
+            ValueError: If a pagination bound is not positive.
         """
+        if page_size < 1 or not 1 <= max_pages <= _MAX_LEGACY_PAGES:
+            raise ValueError(
+                "Client pagination bounds require a positive page size "
+                f"and max_pages no greater than {_MAX_LEGACY_PAGES}"
+            )
+
         all_clients: list[ClientDevice] = []
-        page_index = 1
-        while True:
+        seen_macs: set[str] = set()
+        for page_index in range(1, max_pages + 1):
             data = self._get(
                 _CLIENTS_PATH,
                 {"group_id": project_id, "page_index": page_index, "page_size": page_size},
             )
             raw_clients = data.get("list", [])
             if not raw_clients:
-                break
-            all_clients.extend(ClientDevice.model_validate(c) for c in raw_clients)
+                return all_clients
+            page_clients = [ClientDevice.model_validate(c) for c in raw_clients]
+            page_macs = {client.mac for client in page_clients}
+            if len(page_macs) != len(page_clients) or seen_macs & page_macs:
+                raise APIError(-1, "Ruijie client pagination returned duplicate clients")
+            seen_macs.update(page_macs)
+            all_clients.extend(page_clients)
             total = data.get("totalCount", 0)
             if total and len(all_clients) >= total:
-                break
-            page_index += 1
-        return all_clients
+                return all_clients
+
+        raise APIError(-1, "Ruijie client pagination exceeded its page limit")
 
     def get_gateway_ports(self, serial_number: str) -> list[GatewayPort]:
         """Return WAN/LAN port details for a gateway device.
@@ -535,6 +612,7 @@ class RuijieClient:
         serial_number: str,
         *,
         page_size: int = 100,
+        max_pages: int = _MAX_LEGACY_PAGES,
     ) -> list[SwitchPort]:
         """Return port details for a switch device.
 
@@ -547,6 +625,7 @@ class RuijieClient:
         Args:
             serial_number: Serial number of the switch device.
             page_size: Number of ports per API page.
+            max_pages: Defensive upper bound for vendor page requests.
 
         Returns:
             List of :class:`~pyruijie.SwitchPort` instances.
@@ -554,22 +633,28 @@ class RuijieClient:
         Raises:
             APIError: If the device is not found or the API returns an error.
             ConnectionError: If the API is unreachable.
+            ValueError: If a pagination bound is not positive.
         """
+        if page_size < 1 or not 1 <= max_pages <= _MAX_LEGACY_PAGES:
+            raise ValueError(
+                "Switch port pagination bounds require a positive page size "
+                f"and max_pages no greater than {_MAX_LEGACY_PAGES}"
+            )
+
         all_ports: list[SwitchPort] = []
-        page_index = 0
-        while True:
+        for page_index in range(max_pages):
             data = self._get(
                 f"{_SWITCH_PORTS_PATH}/{serial_number}/ports",
                 {"page_size": page_size, "page_index": page_index},
             )
             raw_ports = data.get("portList", [])
             if not raw_ports:
-                break
+                return all_ports
             all_ports.extend(SwitchPort.model_validate(p) for p in raw_ports)
             if len(raw_ports) < page_size:
-                break
-            page_index += 1
-        return all_ports
+                return all_ports
+
+        raise APIError(-1, "Ruijie switch port pagination exceeded its page limit")
 
     # -- helpers ---------------------------------------------------------------
 
@@ -582,6 +667,35 @@ class RuijieClient:
         for sub in group.get("subGroups", []):
             projects.extend(RuijieClient._collect_projects(sub))
         return projects
+
+    @staticmethod
+    def _resolve_root_group_id(
+        groups: dict[str, Any],
+        data: dict[str, Any],
+    ) -> str:
+        """Resolve the fleet root across Ruijie Cloud response variants."""
+        explicit_ids = {
+            str(value).strip()
+            for value in (data.get("groupId"), groups.get("groupId"))
+            if value is not None and str(value).strip()
+        }
+        if len(explicit_ids) == 1:
+            return explicit_ids.pop()
+        if len(explicit_ids) > 1:
+            raise APIError(-1, "Ruijie group tree has conflicting root group IDs")
+
+        wrapper_ids = {
+            str(group.get("groupId")).strip()
+            for group in groups.get("subGroups", [])
+            if isinstance(group, dict)
+            and group.get("groupId") is not None
+            and str(group.get("groupId")).strip()
+        }
+        if len(wrapper_ids) == 1:
+            return wrapper_ids.pop()
+        if len(wrapper_ids) > 1:
+            raise APIError(-1, "Ruijie group tree has an ambiguous root group")
+        raise APIError(-1, "Ruijie group tree is missing its root group ID")
 
     @staticmethod
     def _index_group_projects(
