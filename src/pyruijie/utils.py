@@ -7,7 +7,12 @@ from typing import Any
 
 _REDACT_PARAMS = frozenset({"access_token", "auth", "sid", "token", "secret"})
 _REDACT_PARAM_PATTERN = re.compile(
-    r"(" + "|".join(re.escape(param) for param in sorted(_REDACT_PARAMS)) + r")=[^&'\s]+"
+    r"(" + "|".join(re.escape(param) for param in sorted(_REDACT_PARAMS)) + r")=[^&'\s]+",
+    re.IGNORECASE,
+)
+_URL_USERINFO_PATTERN = re.compile(
+    r"([a-z][a-z0-9+.-]*://)[^/@\s]+@",
+    re.IGNORECASE,
 )
 _CAMEL_CASE_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 _NON_ALPHANUMERIC = re.compile(r"[^a-z0-9]+")
@@ -27,8 +32,9 @@ _REDACTED = "***"
 
 
 def _sanitize_url(text: str) -> str:
-    """Mask sensitive query-parameter values in URL-bearing text."""
-    return _REDACT_PARAM_PATTERN.sub(r"\1=***", text)
+    """Mask query values and URL-authority credentials in transport text."""
+    sanitized = _URL_USERINFO_PATTERN.sub(r"\1***@", text)
+    return _REDACT_PARAM_PATTERN.sub(r"\1=***", sanitized)
 
 
 def _is_secret_key(key: object) -> bool:

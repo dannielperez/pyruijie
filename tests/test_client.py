@@ -45,6 +45,46 @@ class TestAuthenticate:
         with pytest.raises(AuthenticationError, match="500"):
             client.authenticate()
 
+    @pytest.mark.parametrize(
+        ("transport_error", "secret", "redacted"),
+        [
+            (
+                httpx.ReadError("read failed: ?token=auth-secret"),
+                "auth-secret",
+                "token=***",
+            ),
+            (
+                httpx.RemoteProtocolError("protocol failed: ?TOKEN=upper-secret"),
+                "upper-secret",
+                "TOKEN=***",
+            ),
+            (
+                httpx.ProxyError(
+                    "proxy failed: https://proxy-user:proxy-secret@proxy.example",
+                ),
+                "proxy-secret",
+                "https://***@proxy.example",
+            ),
+        ],
+    )
+    def test_transport_errors_are_typed_and_redacted(
+        self,
+        mock_api,
+        transport_error,
+        secret,
+        redacted,
+    ):
+        mock_api.post("/service/api/oauth20/client/access_token").mock(
+            side_effect=transport_error,
+        )
+        client = RuijieClient(app_id="a", app_secret="s")
+
+        with pytest.raises(RuijieConnectionError) as exc_info:
+            client.authenticate()
+
+        assert secret not in str(exc_info.value)
+        assert redacted in str(exc_info.value)
+
     def test_missing_api_token(self, mock_api, monkeypatch):
         monkeypatch.delenv("RUIJIE_API_TOKEN", raising=False)
         client = RuijieClient(app_id="a", app_secret="s")
@@ -288,6 +328,74 @@ class TestGetDevices:
         with pytest.raises(RuijieConnectionError, match="vendor stalled"):
             client.get_devices("proj-timeout")
 
+    @pytest.mark.parametrize(
+        "transport_error",
+        [
+            httpx.ReadError("read failed: ?access_token=request-secret"),
+            httpx.RemoteProtocolError(
+                "protocol failed: ?access_token=request-secret",
+            ),
+        ],
+    )
+    def test_all_transport_errors_are_typed_and_redacted(
+        self,
+        authed_client,
+        transport_error,
+    ):
+        client, mock_api = authed_client
+        mock_api.get("/service/api/maint/devices").mock(
+            side_effect=transport_error,
+        )
+
+        with pytest.raises(RuijieConnectionError) as exc_info:
+            client.get_devices("proj-transport")
+
+        assert "request-secret" not in str(exc_info.value)
+        assert "access_token=***" in str(exc_info.value)
+
+    def test_legacy_device_pages_share_one_aggregate_deadline(self, monkeypatch):
+        class Clock:
+            now = 100.0
+
+            def monotonic(self):
+                return self.now
+
+        clock = Clock()
+        client = RuijieClient(
+            app_id="test-app",
+            app_secret="test-secret",
+            api_token="test-token",
+            timeout=30.0,
+        )
+        client._access_token = "access-token"
+        client._expires_at = 1_000.0
+        request_timeouts = []
+
+        def slow_full_page(method, path, *, params, timeout):
+            request_timeouts.append(timeout)
+            clock.now += 2.0
+            return httpx.Response(
+                200,
+                json={
+                    "code": 0,
+                    "deviceList": [{"serialNumber": f"SN-{len(request_timeouts)}"}],
+                },
+                request=httpx.Request(method, f"{BASE_URL}{path}"),
+            )
+
+        monkeypatch.setattr("pyruijie.client.time", clock)
+        monkeypatch.setattr(client._http, "request", slow_full_page)
+
+        with pytest.raises(RuijieConnectionError, match="deadline"):
+            client.get_devices(
+                "proj-deadline",
+                per_page=1,
+                max_pages=10,
+                deadline_seconds=3.0,
+            )
+
+        assert request_timeouts == pytest.approx([3.0, 1.0])
+
 
 class TestGetFleetDevices:
     @staticmethod
@@ -528,11 +636,36 @@ class TestGetFleetDevices:
 
         assert device_route.call_count == 1
 
-    def test_rejects_non_positive_pagination_bounds(self, authed_client):
+    @pytest.mark.parametrize("max_pages", [0, 101])
+    def test_rejects_out_of_range_pagination_bounds(self, authed_client, max_pages):
         client, _mock_api = authed_client
 
         with pytest.raises(ValueError, match="bounds"):
-            client.get_fleet_devices(deadline_seconds=0)
+            client.get_fleet_devices(max_pages=max_pages)
+
+    @pytest.mark.parametrize(
+        ("method_name", "args"),
+        [
+            ("get_projects", ()),
+            ("get_fleet_devices", ()),
+            ("get_devices", ("project-1",)),
+            ("get_clients", ("project-1",)),
+            ("get_gateway_ports", ("gateway-1",)),
+            ("get_switch_ports", ("switch-1",)),
+        ],
+    )
+    @pytest.mark.parametrize("deadline_seconds", [0.0, -1.0, float("inf"), float("nan")])
+    def test_all_list_methods_reject_unbounded_deadlines(
+        self,
+        authed_client,
+        method_name,
+        args,
+        deadline_seconds,
+    ):
+        client, _mock_api = authed_client
+
+        with pytest.raises(ValueError, match="positive, finite deadline"):
+            getattr(client, method_name)(*args, deadline_seconds=deadline_seconds)
 
     def test_token_refresh_cannot_exhaust_aggregate_deadline(self, monkeypatch):
         class Clock:
