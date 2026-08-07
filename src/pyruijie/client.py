@@ -10,6 +10,7 @@ import time
 from typing import Any
 
 import httpx
+from pydantic import ValidationError
 
 from pyruijie.exceptions import APIError, AuthenticationError, ConnectionError
 from pyruijie.models import ClientDevice, Device, GatewayPort, Project, SwitchPort
@@ -643,7 +644,8 @@ class RuijieClient:
             List of :class:`~pyruijie.GatewayPort` instances.
 
         Raises:
-            APIError: If the device is not found or the API returns an error.
+            APIError: If the device is not found, the API returns an error, or
+                the response does not contain a complete typed port list.
             ConnectionError: If the API is unreachable.
         """
         deadline = self._list_deadline(deadline_seconds)
@@ -651,8 +653,44 @@ class RuijieClient:
             f"{_GATEWAY_PORTS_PATH}/{serial_number}",
             deadline=deadline,
         )
-        raw_ports = data.get("data", [])
-        return [GatewayPort.model_validate(p) for p in raw_ports]
+        raw_ports = data.get("data")
+        if not isinstance(raw_ports, list):
+            raise APIError(-1, "Malformed Ruijie gateway-port response")
+        try:
+            return [GatewayPort.model_validate(port) for port in raw_ports]
+        except ValidationError as exc:
+            raise APIError(-1, "Malformed Ruijie gateway-port response") from exc
+
+    def get_primary_lan_port(
+        self,
+        serial_number: str,
+        *,
+        deadline_seconds: float = _DEFAULT_LIST_DEADLINE_SECONDS,
+    ) -> GatewayPort | None:
+        """Return the gateway's deterministic primary configured LAN interface.
+
+        Ruijie Cloud exposes no explicit primary flag. Prefer an active LAN,
+        then the lowest alias (normally ``LAN1``), with CIDR as a stable final
+        tie-breaker. Only ports with a valid host/prefix value are eligible.
+        """
+        candidates = [
+            port
+            for port in self.get_gateway_ports(
+                serial_number,
+                deadline_seconds=deadline_seconds,
+            )
+            if port.is_lan and port.interface_cidr
+        ]
+        if not candidates:
+            return None
+        return min(
+            candidates,
+            key=lambda port: (
+                not port.is_up,
+                port.alias.casefold(),
+                port.interface_cidr or "",
+            ),
+        )
 
     def get_switch_ports(
         self,
