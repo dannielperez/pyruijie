@@ -1032,6 +1032,7 @@ class TestGetGatewayPorts:
         assert ports[0].is_wan is True
         assert ports[0].subnet == "203.0.113.0/24"
         assert ports[1].is_lan is True
+        assert ports[1].interface_cidr == "192.168.1.1/24"
         assert ports[1].subnet == "192.168.1.0/24"
 
     def test_empty(self, authed_client):
@@ -1041,6 +1042,47 @@ class TestGetGatewayPorts:
         )
         ports = client.get_gateway_ports("SN-GW-002")
         assert ports == []
+
+    @pytest.mark.parametrize(
+        "payload",
+        [{"code": 0}, {"code": 0, "data": {}}, {"code": 0, "data": [1]}],
+    )
+    def test_rejects_incomplete_port_list(self, authed_client, payload):
+        client, mock_api = authed_client
+        mock_api.get("/service/api/gateway/intf/info/SN-GW-003").respond(json=payload)
+
+        with pytest.raises(APIError, match="Malformed Ruijie gateway-port response"):
+            client.get_gateway_ports("SN-GW-003")
+
+    def test_primary_lan_prefers_active_lowest_alias(self, authed_client):
+        client, mock_api = authed_client
+        mock_api.get("/service/api/gateway/intf/info/SN-GW-004").respond(
+            json={
+                "code": 0,
+                "data": [
+                    {
+                        "alias": "LAN2",
+                        "type": "LAN",
+                        "ipAddr": "10.40.5.1",
+                        "ipMask": "255.255.255.0",
+                        "linestatus": "up",
+                    },
+                    {
+                        "alias": "LAN1",
+                        "type": "LAN",
+                        "ipAddr": "10.40.4.1",
+                        "ipMask": "255.255.255.0",
+                        "linestatus": "up",
+                    },
+                ],
+            }
+        )
+
+        primary = client.get_primary_lan_port("SN-GW-004")
+
+        assert primary is not None
+        assert primary.alias == "LAN1"
+        assert primary.interface_cidr == "10.40.4.1/24"
 
 
 # -- get_switch_ports tests ----------------------------------------------------

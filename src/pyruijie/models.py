@@ -163,6 +163,16 @@ class GatewayPort(BaseModel):
     model_config = {"populate_by_name": True}
 
     @property
+    def interface_cidr(self) -> str | None:
+        """Return the configured host address in prefix notation."""
+        if not self.ip_address or not self.ip_mask:
+            return None
+        try:
+            return str(IPv4Interface(f"{self.ip_address}/{self.ip_mask}"))
+        except (ValueError, TypeError):
+            return None
+
+    @property
     def subnet(self) -> str | None:
         """Derive CIDR subnet from IP address and mask (e.g. ``192.168.1.0/24``)."""
         if not self.ip_address or not self.ip_mask:
