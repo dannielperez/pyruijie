@@ -1,6 +1,7 @@
 """Tests for RuijieClient."""
 
 import hashlib
+import json
 
 import httpx
 import pytest
@@ -843,6 +844,46 @@ class TestClientRepr:
             base_url="https://example.com/",
         )
         assert client.base_url == "https://example.com"
+
+
+class TestWireGuardCloudApi:
+    def test_get_vpn_info(self, authed_client):
+        client, mock_api = authed_client
+        route = mock_api.get("/service/api/devconf/vpn/6735396/info").respond(
+            json={"code": 0, "data": {"wireguard": []}},
+        )
+
+        result = client.get_wireguard_vpn_info("6735396")
+
+        assert result["data"]["wireguard"] == []
+        assert route.called
+
+    def test_add_update_and_delete_policy(self, authed_client):
+        client, mock_api = authed_client
+        add = mock_api.post("/service/api/wireguard/vpn/add/SN-1").respond(
+            json={"code": 0, "msg": "OK."},
+        )
+        update = mock_api.post("/service/api/wireguard/vpn/update/SN-1").respond(
+            json={"code": 0, "msg": "OK."},
+        )
+        delete = mock_api.post("/service/api/wireguard/vpn/delete/SN-1").respond(
+            json={"code": 0, "msg": "OK."},
+        )
+        payload = {"uuid": "policy-1", "name": "CLOUD-Parque-del-Sol"}
+
+        assert client.add_wireguard_policy("SN-1", payload)["code"] == 0
+        assert client.update_wireguard_policy("SN-1", payload)["code"] == 0
+        assert client.delete_wireguard_policy("SN-1", "policy-1")["code"] == 0
+        assert json.loads(add.calls.last.request.content) == payload
+        assert json.loads(update.calls.last.request.content) == payload
+        assert json.loads(delete.calls.last.request.content) == {"uuid": "policy-1"}
+
+    @pytest.mark.parametrize("value", ["", "project/child", "serial?query", "uuid#fragment"])
+    def test_rejects_invalid_path_identifiers(self, value):
+        client = RuijieClient(app_id="a", app_secret="s")
+
+        with pytest.raises(ValueError, match="path identifier"):
+            client.get_wireguard_vpn_info(value)
 
 
 # -- get_clients tests ---------------------------------------------------------

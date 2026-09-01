@@ -72,6 +72,8 @@ _DEVICES_PATH = "/service/api/maint/devices"
 _CLIENTS_PATH = "/service/api/open/v1/dev/user/current-user"
 _GATEWAY_PORTS_PATH = "/service/api/gateway/intf/info"
 _SWITCH_PORTS_PATH = "/service/api/conf/switch/device"
+_WIREGUARD_VPN_PATH = "/service/api/wireguard/vpn"
+_VPN_INFO_PATH = "/service/api/devconf/vpn"
 
 
 class RuijieClient:
@@ -692,6 +694,47 @@ class RuijieClient:
             ),
         )
 
+    def get_wireguard_vpn_info(self, project_id: str | int) -> dict[str, Any]:
+        """Return the project's cloud-managed WireGuard policy envelope."""
+        identifier = self._path_identifier(project_id, name="project_id")
+        return self._get(f"{_VPN_INFO_PATH}/{identifier}/info")
+
+    def get_wireguard_secret_key(self, serial_number: str) -> dict[str, Any]:
+        """Return the gateway-generated WireGuard key envelope."""
+        identifier = self._path_identifier(serial_number, name="serial_number")
+        return self._get(f"{_WIREGUARD_VPN_PATH}/secret/key/{identifier}")
+
+    def add_wireguard_policy(
+        self,
+        serial_number: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Queue a WireGuard policy addition for a cloud-managed gateway."""
+        identifier = self._path_identifier(serial_number, name="serial_number")
+        return self._post(f"{_WIREGUARD_VPN_PATH}/add/{identifier}", json=payload)
+
+    def update_wireguard_policy(
+        self,
+        serial_number: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Queue a WireGuard policy update for a cloud-managed gateway."""
+        identifier = self._path_identifier(serial_number, name="serial_number")
+        return self._post(f"{_WIREGUARD_VPN_PATH}/update/{identifier}", json=payload)
+
+    def delete_wireguard_policy(
+        self,
+        serial_number: str,
+        policy_uuid: str,
+    ) -> dict[str, Any]:
+        """Queue deletion of one WireGuard policy from a cloud-managed gateway."""
+        serial = self._path_identifier(serial_number, name="serial_number")
+        policy = self._path_identifier(policy_uuid, name="policy_uuid")
+        return self._post(
+            f"{_WIREGUARD_VPN_PATH}/delete/{serial}",
+            json={"uuid": policy},
+        )
+
     def get_switch_ports(
         self,
         serial_number: str,
@@ -746,6 +789,14 @@ class RuijieClient:
         raise APIError(-1, "Ruijie switch port pagination exceeded its page limit")
 
     # -- helpers ---------------------------------------------------------------
+
+    @staticmethod
+    def _path_identifier(value: str | int, *, name: str) -> str:
+        """Validate an opaque vendor identifier before using it in a URL path."""
+        identifier = str(value).strip()
+        if not identifier or "/" in identifier or "?" in identifier or "#" in identifier:
+            raise ValueError(f"{name} must be a non-empty path identifier")
+        return identifier
 
     @staticmethod
     def _collect_projects(group: dict[str, Any]) -> list[Project]:
