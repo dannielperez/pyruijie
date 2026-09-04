@@ -1249,3 +1249,122 @@ class TestSanitizeUrl:
         url = "https://example.com/api?group_id=123&page=1"
         result = _sanitize_url(url)
         assert result == url
+
+
+class TestFleetRootWithoutDevices:
+    """Ruijie Cloud (2026-09-04) answers ``{code, msg, totalCount: 0}`` — no
+    ``deviceList`` key — for the account root it now exposes as ``rootGroupId``,
+    while the single wrapper subgroup beneath it still carries the whole fleet."""
+
+    _TREE = {
+        "code": 0,
+        "rootGroupId": "root-empty",
+        "rootGroupName": "Account",
+        "groups": {
+            "type": "COMPANY",
+            "name": "Account",
+            "groupId": "",
+            "timezone": "America/Puerto_Rico",
+            "subGroups": [
+                {
+                    "type": "COMPANY",
+                    "name": "Wrapper",
+                    "groupId": "wrap-1",
+                    "subGroups": [
+                        {
+                            "type": "BUILDING",
+                            "name": "Site One",
+                            "groupId": "p1",
+                            "subGroups": [],
+                        },
+                    ],
+                },
+            ],
+        },
+    }
+
+    def test_descends_into_direct_subgroups_when_root_holds_no_devices(
+        self,
+        authed_client,
+    ):
+        client, mock_api = authed_client
+        mock_api.get("/service/api/group/single/tree").respond(json=self._TREE)
+
+        def _devices(request):
+            group_id = request.url.params["group_id"]
+            if group_id == "root-empty":
+                return httpx.Response(200, json={"code": 0, "msg": "OK.", "totalCount": 0})
+            return httpx.Response(
+                200,
+                json={
+                    "code": 0,
+                    "deviceList": [{"serialNumber": "SN-ONE", "groupId": "p1"}],
+                    "totalCount": 1,
+                },
+            )
+
+        device_route = mock_api.get("/service/api/maint/devices").mock(side_effect=_devices)
+        devices = client.get_fleet_devices()
+        assert [d.serial_number for d in devices] == ["SN-ONE"]
+        assert devices[0].project_id == "p1"
+        requested = [c.request.url.params["group_id"] for c in device_route.calls]
+        assert requested == ["root-empty", "wrap-1"]
+
+    def test_zero_count_root_without_subgroups_is_an_empty_fleet(self, authed_client):
+        client, mock_api = authed_client
+        tree = {**self._TREE, "groups": {**self._TREE["groups"], "subGroups": []}}
+        mock_api.get("/service/api/group/single/tree").respond(json=tree)
+        mock_api.get("/service/api/maint/devices").respond(
+            json={"code": 0, "msg": "OK.", "totalCount": 0},
+        )
+        assert client.get_fleet_devices() == []
+
+    def test_missing_device_list_with_nonzero_total_still_fails_closed(
+        self,
+        authed_client,
+    ):
+        client, mock_api = authed_client
+        mock_api.get("/service/api/group/single/tree").respond(json=self._TREE)
+        mock_api.get("/service/api/maint/devices").respond(
+            json={"code": 0, "msg": "OK.", "totalCount": 3},
+        )
+        with pytest.raises(APIError, match="missing deviceList"):
+            client.get_fleet_devices()
+
+    def test_overlapping_subgroups_fail_closed(self, authed_client):
+        client, mock_api = authed_client
+        tree = {
+            **self._TREE,
+            "groups": {
+                **self._TREE["groups"],
+                "subGroups": [
+                    {
+                        "type": "COMPANY",
+                        "name": "A",
+                        "groupId": "wrap-a",
+                        "subGroups": [
+                            {"type": "BUILDING", "name": "Site", "groupId": "p1", "subGroups": []},
+                        ],
+                    },
+                    {"type": "COMPANY", "name": "B", "groupId": "wrap-b", "subGroups": []},
+                ],
+            },
+        }
+        mock_api.get("/service/api/group/single/tree").respond(json=tree)
+
+        def _devices(request):
+            group_id = request.url.params["group_id"]
+            if group_id == "root-empty":
+                return httpx.Response(200, json={"code": 0, "msg": "OK.", "totalCount": 0})
+            return httpx.Response(
+                200,
+                json={
+                    "code": 0,
+                    "deviceList": [{"serialNumber": "SN-DUP", "groupId": "p1"}],
+                    "totalCount": 1,
+                },
+            )
+
+        mock_api.get("/service/api/maint/devices").mock(side_effect=_devices)
+        with pytest.raises(APIError, match="overlap"):
+            client.get_fleet_devices()
