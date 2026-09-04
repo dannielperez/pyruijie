@@ -76,6 +76,14 @@ _WIREGUARD_VPN_PATH = "/service/api/wireguard/vpn"
 _VPN_INFO_PATH = "/service/api/devconf/vpn"
 
 
+def _coerce_zero_total(raw_total: Any) -> bool:
+    """True only when ``totalCount`` is present and parses to exactly zero."""
+    try:
+        return int(raw_total) == 0
+    except (TypeError, ValueError):
+        return False
+
+
 class RuijieClient:
     """Synchronous client for the Ruijie Cloud API.
 
@@ -425,6 +433,17 @@ class RuijieClient:
             max_pages=max_pages,
             deadline=deadline,
         )
+        if not devices:
+            # A root that answers "no devices" while its direct subgroups carry
+            # the fleet (the shape Ruijie Cloud switched to on 2026-09-04): the
+            # hierarchy is still authoritative, so collect per direct subgroup
+            # and fail closed on any overlap between them.
+            devices = self._get_fleet_devices_below_root(
+                groups,
+                per_page=per_page,
+                max_pages=max_pages,
+                deadline=deadline,
+            )
 
         enriched: list[Device] = []
         for device in devices:
@@ -443,6 +462,41 @@ class RuijieClient:
                 ),
             )
         return enriched
+
+    def _get_fleet_devices_below_root(
+        self,
+        groups: dict[str, Any],
+        *,
+        per_page: int,
+        max_pages: int,
+        deadline: float,
+    ) -> list[Device]:
+        """Collect the fleet from the root's direct subgroups (no overlap allowed)."""
+        subgroup_ids = [
+            str(group.get("groupId")).strip()
+            for group in groups.get("subGroups", [])
+            if isinstance(group, dict)
+            and group.get("groupId") is not None
+            and str(group.get("groupId")).strip()
+        ]
+        collected: list[Device] = []
+        seen_serials: set[str] = set()
+        for group_id in subgroup_ids:
+            group_devices = self._get_complete_fleet_devices(
+                group_id,
+                per_page=per_page,
+                max_pages=max_pages,
+                deadline=deadline,
+            )
+            serials = {device.serial_number for device in group_devices}
+            if seen_serials & serials:
+                raise APIError(
+                    -1,
+                    "Ruijie fleet subgroups overlap; snapshot is not partitionable",
+                )
+            seen_serials.update(serials)
+            collected.extend(group_devices)
+        return collected
 
     def _get_complete_fleet_devices(
         self,
@@ -464,6 +518,11 @@ class RuijieClient:
                 deadline=deadline,
             )
             raw_devices = data.get("deviceList")
+            if raw_devices is None and _coerce_zero_total(data.get("totalCount")):
+                # Ruijie Cloud omits ``deviceList`` entirely for a group that
+                # holds no devices (observed 2026-09-04 on the account root
+                # after a hierarchy change). Zero devices is a valid answer.
+                return all_devices
             if not isinstance(raw_devices, list):
                 raise APIError(-1, "Ruijie fleet response is missing deviceList")
 
@@ -816,7 +875,11 @@ class RuijieClient:
         """Resolve the fleet root across Ruijie Cloud response variants."""
         explicit_ids = {
             str(value).strip()
-            for value in (data.get("groupId"), groups.get("groupId"))
+            for value in (
+                data.get("groupId"),
+                data.get("rootGroupId"),
+                groups.get("groupId"),
+            )
             if value is not None and str(value).strip()
         }
         if len(explicit_ids) == 1:

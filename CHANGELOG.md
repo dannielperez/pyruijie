@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `RuijieClient.get_fleet_devices` survives the 2026-09-04 Ruijie Cloud hierarchy change:
+  the group-tree envelope now carries `rootGroupId`, the root's own `groupId` is empty, and
+  the device-list endpoint answers `{code, msg, totalCount: 0}` with no `deviceList` key for
+  that root while the wrapper subgroup beneath it holds the fleet. The client accepts
+  `rootGroupId`, treats a zero-count page without `deviceList` as an empty fleet, and
+  descends into the root's direct subgroups when the root holds no devices (failing closed on
+  overlapping subgroups). Previously every fleet snapshot raised
+  `APIError(-1, "Ruijie fleet response is missing deviceList")`.
+
 ### Added
 
 - Read-only EST bridge firmware recognition from the unauthenticated local
