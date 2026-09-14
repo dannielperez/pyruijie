@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import re
 import uuid as _uuid
 from dataclasses import asdict, dataclass, field
 from ipaddress import IPv4Interface, IPv4Network, ip_interface, ip_network
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator
+
+from pyruijie.utils import format_mac
 
 
 class Project(BaseModel):
@@ -142,6 +145,53 @@ class ClientDevice(BaseModel):
     @property
     def is_online(self) -> bool:
         """Clients returned by current-user are always online."""
+        return True
+
+
+class GatewayClientDevice(BaseModel):
+    """A client reported by a gateway's local ``user_list`` runtime view."""
+
+    mac: str = Field(
+        validation_alias=AliasChoices("mac", "macAddr", "macAddress"),
+    )
+    ip: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("userIp", "ip", "ipAddr", "ipAddress"),
+    )
+    hostname: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("hostName", "hostname", "name", "userName"),
+    )
+    vlan_id: int | None = Field(
+        default=None,
+        validation_alias=AliasChoices("vlanId", "vlan", "vid"),
+    )
+    connect_type: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("connectType", "accessType", "type"),
+    )
+    interface: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("ifname", "interface", "portName"),
+    )
+    ssid: str | None = None
+    band: str | None = None
+    channel: int | None = None
+    rssi: int | None = None
+
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    @field_validator("mac", mode="before")
+    @classmethod
+    def _normalize_mac(cls, value: object) -> str:
+        normalized = format_mac(str(value or ""))
+        if not re.fullmatch(r"(?:[0-9A-F]{2}:){5}[0-9A-F]{2}", normalized):
+            raise ValueError("invalid client MAC address")
+        return normalized
+
+    @property
+    def is_online(self) -> bool:
+        """The gateway runtime list contains its currently learned clients."""
         return True
 
 

@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `GatewayClient.get_clients()` reads the local gateway `devSta.get` / `user_list`
+  runtime inventory with an explicit timeout, typed firmware-field aliases, VLAN and
+  interface context, duplicate-MAC protection, and fail-closed response validation.
+  This gives consumers a direct-gateway complement when Ruijie Cloud omits wired clients.
 - Read-only EST bridge firmware recognition from the unauthenticated local
   login page, exact model/version policy evaluation, concurrent fleet scans,
   and `pyruijie firmware scan`.

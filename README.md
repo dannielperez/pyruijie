@@ -248,6 +248,11 @@ from pyruijie import GatewayClient, WireGuardManager
 gw = GatewayClient("10.100.1.1", "admin", "password")
 gw.login()
 
+# Read the gateway's complete local runtime client table. This complements the
+# cloud client view when wired-client reporting to Ruijie Cloud is incomplete.
+for endpoint in gw.get_clients(timeout=8):
+    print(endpoint.mac, endpoint.ip, endpoint.hostname, endpoint.vlan_id)
+
 wg = WireGuardManager(gw)
 
 # List server policies and peers
