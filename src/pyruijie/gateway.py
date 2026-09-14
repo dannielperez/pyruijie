@@ -36,7 +36,8 @@ import requests
 import urllib3
 
 from pyruijie.exceptions import RuijieApiError, RuijieAuthError
-from pyruijie.utils import _sanitize_url, redact_payload
+from pyruijie.models import GatewayClientDevice
+from pyruijie.utils import _sanitize_url, format_mac, redact_payload
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -224,6 +225,52 @@ class GatewayClient:
                     raw=resp,
                 )
         return resp
+
+    def get_clients(self, *, timeout: int | None = None) -> list[GatewayClientDevice]:
+        """Return every client in the gateway's local runtime client table.
+
+        This is the same read-only ``devSta.get`` / ``user_list`` view used by
+        the gateway web UI. It complements the cloud client endpoint, which can
+        omit wired clients when gateway-to-cloud reporting is stale.
+
+        One timeout-bounded read is performed. Malformed or duplicate records
+        fail closed instead of silently producing an incomplete inventory.
+        """
+        resp = self.cmd("devSta.get", "user_list", timeout=timeout)
+        data = resp.get("data")
+        if not isinstance(data, dict):
+            raise RuijieApiError("devSta.get user_list returned malformed data", raw=resp)
+
+        rcode = data.get("rcode", "")
+        if rcode and rcode != "00000000":
+            raise RuijieApiError(
+                f"devSta.get user_list failed: {data.get('message', rcode)}",
+                rcode=rcode,
+                raw=resp,
+            )
+
+        raw_clients = data.get("list")
+        if not isinstance(raw_clients, list):
+            raise RuijieApiError(
+                "devSta.get user_list response did not contain a client list",
+                raw=resp,
+            )
+
+        try:
+            clients = [GatewayClientDevice.model_validate(item) for item in raw_clients]
+        except (TypeError, ValueError) as exc:
+            raise RuijieApiError(
+                "devSta.get user_list returned an invalid client record",
+                raw=resp,
+            ) from exc
+
+        normalized_macs = [format_mac(client.mac) for client in clients]
+        if len(normalized_macs) != len(set(normalized_macs)):
+            raise RuijieApiError(
+                "devSta.get user_list returned duplicate client MAC addresses",
+                raw=resp,
+            )
+        return clients
 
     def close(self) -> None:
         """Close the underlying HTTP session."""

@@ -28,6 +28,7 @@ from pyruijie.gateway import GatewayClient
 from pyruijie.models import (
     ClientDevice,
     Device,
+    GatewayClientDevice,
     GatewayPort,
     Project,
     SwitchPort,
@@ -72,6 +73,7 @@ __all__ = [
     "scan_firmware",
     "ClientDevice",
     "Device",
+    "GatewayClientDevice",
     "GatewayPort",
     "Project",
     "SwitchPort",

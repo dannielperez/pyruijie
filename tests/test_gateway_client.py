@@ -200,6 +200,94 @@ class TestGatewayClientCmdChecked:
         assert result["data"]["rcode"] == "00000000"
 
 
+class TestGatewayClientInventory:
+    def test_get_clients_uses_runtime_user_list_and_normalizes_firmware_aliases(
+        self,
+        client: GatewayClient,
+    ):
+        client._sid = "fake_sid"
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "data": {
+                "rcode": "00000000",
+                "list": [
+                    {
+                        "hostName": "Fanvil Lobby",
+                        "userIp": "10.200.80.130",
+                        "mac": "0C:38:3E:2C:9D:84",
+                        "vlanId": 80,
+                        "ifname": "port 5",
+                        "vendorSpecific": "preserved",
+                    },
+                    {
+                        "name": "Fanvil New",
+                        "ipAddr": "10.200.80.131",
+                        "macAddress": "0C-38-3E-2C-98-3D",
+                        "vid": "80",
+                    },
+                ],
+            },
+        }
+        mock_resp.raise_for_status = MagicMock()
+
+        with patch.object(client._session, "post", return_value=mock_resp) as mock_post:
+            clients = client.get_clients(timeout=7)
+
+        assert [item.ip for item in clients] == ["10.200.80.130", "10.200.80.131"]
+        assert [item.hostname for item in clients] == ["Fanvil Lobby", "Fanvil New"]
+        assert [item.mac for item in clients] == [
+            "0C:38:3E:2C:9D:84",
+            "0C:38:3E:2C:98:3D",
+        ]
+        assert [item.vlan_id for item in clients] == [80, 80]
+        assert clients[0].interface == "port 5"
+        assert clients[0].model_dump()["vendorSpecific"] == "preserved"
+        call = mock_post.call_args
+        assert call.kwargs["json"]["method"] == "devSta.get"
+        assert call.kwargs["json"]["params"]["module"] == "user_list"
+        assert call.kwargs["timeout"] == 7
+
+    @pytest.mark.parametrize(
+        "payload, message",
+        [
+            ({"data": None}, "malformed data"),
+            ({"data": {"rcode": "00000000"}}, "client list"),
+            (
+                {"data": {"rcode": "00000000", "list": [{"userIp": "10.0.0.1"}]}},
+                "invalid client record",
+            ),
+            (
+                {
+                    "data": {
+                        "rcode": "00000000",
+                        "list": [
+                            {"mac": "AA:BB:CC:DD:EE:FF"},
+                            {"mac": "aabb.ccdd.eeff"},
+                        ],
+                    },
+                },
+                "duplicate client MAC",
+            ),
+        ],
+    )
+    def test_get_clients_rejects_incomplete_inventory(
+        self,
+        client: GatewayClient,
+        payload,
+        message,
+    ):
+        client._sid = "fake_sid"
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = payload
+        mock_resp.raise_for_status = MagicMock()
+
+        with (
+            patch.object(client._session, "post", return_value=mock_resp),
+            pytest.raises(RuijieApiError, match=message),
+        ):
+            client.get_clients()
+
+
 class TestGatewayClientContextManager:
     def test_context_manager(self, client: GatewayClient):
         mock_resp = MagicMock()
