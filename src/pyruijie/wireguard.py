@@ -42,6 +42,36 @@ from pyruijie.models import (
 logger = logging.getLogger(__name__)
 
 
+def _snapshot_entries(response: dict, key: str) -> list[dict]:
+    """Require an explicit complete list; missing data is not checked-empty.
+
+    Status endpoints return their entire list in one response. Reject missing,
+    malformed and duplicate identities before callers reconcile their mirror.
+    Error text intentionally contains no response payload or credentials.
+    """
+    if not isinstance(response, dict) or response.get("error"):
+        raise RuijieWireGuardError("WireGuard snapshot unavailable")
+    data = response.get("data")
+    if not isinstance(data, dict) or data.get("rcode") not in (None, "00000000"):
+        raise RuijieWireGuardError("WireGuard snapshot unsuccessful")
+    entries = data.get(key)
+    _validate_snapshot_entries(entries)
+    return entries
+
+
+def _validate_snapshot_entries(entries: Any) -> None:
+    if not isinstance(entries, list):
+        raise RuijieWireGuardError("WireGuard snapshot list missing or malformed")
+    seen = set()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise RuijieWireGuardError("WireGuard snapshot entry malformed")
+        identity = entry.get("uuid")
+        if not isinstance(identity, str) or not identity.strip() or identity in seen:
+            raise RuijieWireGuardError("WireGuard snapshot identity missing or duplicated")
+        seen.add(identity)
+
+
 # ── Drift detection result ────────────────────────────────────────────
 
 
@@ -126,8 +156,13 @@ class WireGuardManager:
         returns ``{"serverlist": [...]}`` with full peer info.
         """
         resp = self.client.cmd("devSta.get", "wireguard", {"getype": "1"})
-        servers = resp.get("data", {}).get("serverlist", [])
-        return [WireGuardServerPolicy.from_gateway(s) for s in servers]
+        servers = _snapshot_entries(resp, "serverlist")
+        for server in servers:
+            _validate_snapshot_entries(server.get("clientlist"))
+        try:
+            return [WireGuardServerPolicy.from_gateway(s) for s in servers]
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise RuijieWireGuardError("WireGuard server snapshot malformed") from exc
 
     def get_server_policy(self, uuid: str | None = None) -> WireGuardServerPolicy:
         """Get a specific server policy by UUID, or the first one.
@@ -390,8 +425,11 @@ class WireGuardManager:
         with runtime stats (rxbyte, txbyte, updateTime).
         """
         resp = self.client.cmd("devSta.get", "wireguard", {"getype": "0"})
-        clients = resp.get("data", {}).get("clientlist", [])
-        return [WireGuardClientPolicy.from_gateway(c) for c in clients]
+        clients = _snapshot_entries(resp, "clientlist")
+        try:
+            return [WireGuardClientPolicy.from_gateway(c) for c in clients]
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise RuijieWireGuardError("WireGuard client snapshot malformed") from exc
 
     def get_client_policy(self, uuid: str | None = None) -> WireGuardClientPolicy:
         """Get a specific client policy or the first one.
