@@ -472,6 +472,48 @@ class WireGuardClientPolicy:
     raw: dict = field(default_factory=dict, repr=False)
 
     @classmethod
+    def from_cloud(cls, data: dict) -> WireGuardClientPolicy:
+        """Normalize a complete cloud client policy to the gateway DTO contract.
+
+        Cloud and LuCI spell address/key/route fields differently. Retain the
+        canonical snapshot so downstream drift and redaction use one shape.
+        This is configuration evidence, not a live gateway health observation.
+        """
+        required = ("uuid", "localAddress", "localPublicKey", "peerPublicKey", "endpoint")
+        if not isinstance(data, dict) or any(
+            not isinstance(data.get(key), str) or not data[key].strip() for key in required
+        ):
+            raise ValueError("Incomplete WireGuard cloud client policy")
+        if str(data.get("type")) != "0":
+            raise ValueError("Expected a WireGuard cloud client policy")
+        routes = data.get("allowIps")
+        if not isinstance(routes, list) or any(not isinstance(r, str) for r in routes):
+            raise ValueError("Cloud AllowedIPs must be a list of networks")
+        ip_interface(data["localAddress"])
+        for route in routes:
+            ip_network(route, strict=False)
+        return cls.from_gateway(
+            {
+                "uuid": data["uuid"],
+                "desc": data.get("name", ""),
+                "enable": "1" if data.get("enable") in (1, "1", True) else "0",
+                "type": "0",
+                "localAddr": data["localAddress"],
+                "localPort": str(data.get("localPort") or 51820),
+                "localPrivkey": data.get("localPrivateKey", ""),
+                "localPubkey": data["localPublicKey"],
+                "peerPubkey": data["peerPublicKey"],
+                "endpoint": data["endpoint"],
+                "endpointPort": str(data.get("endpointPort") or 51820),
+                "presharedkey": data.get("preSharedKey", ""),
+                "allowips": list(routes),
+                "localDns": data.get("localDns") or [],
+                "keepalive": str(data.get("keepAlive") or 0),
+                "intf": data.get("intf") or "all",
+            }
+        )
+
+    @classmethod
     def from_gateway(cls, data: dict) -> WireGuardClientPolicy:
         return cls(
             uuid=data.get("uuid", ""),

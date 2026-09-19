@@ -13,7 +13,14 @@ import httpx
 from pydantic import ValidationError
 
 from pyruijie.exceptions import APIError, AuthenticationError, ConnectionError
-from pyruijie.models import ClientDevice, Device, GatewayPort, Project, SwitchPort
+from pyruijie.models import (
+    ClientDevice,
+    Device,
+    GatewayPort,
+    Project,
+    SwitchPort,
+    WireGuardClientPolicy,
+)
 from pyruijie.utils import _sanitize_url
 
 # Refresh tokens this many seconds before they actually expire.
@@ -757,6 +764,30 @@ class RuijieClient:
         """Return the project's cloud-managed WireGuard policy envelope."""
         identifier = self._path_identifier(project_id, name="project_id")
         return self._get(f"{_VPN_INFO_PATH}/{identifier}/info")
+
+    def get_existing_wireguard_clients(
+        self,
+        project_id: str | int,
+        serial_number: str,
+    ) -> list[WireGuardClientPolicy]:
+        """Read typed client configuration only for an unambiguous gateway."""
+        gateways = [
+            device
+            for device in self.get_devices(project_id, deadline_seconds=30)
+            if device.product_type == "EGW"
+        ]
+        if not serial_number or len(gateways) != 1 or gateways[0].serial_number != serial_number:
+            raise ValueError("Cloud project does not uniquely identify the intended gateway.")
+        response = self.get_wireguard_vpn_info(project_id)
+        rows = (response.get("data") or {}).get("wireguard")
+        if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+            raise ValueError("Invalid cloud WireGuard policy list.")
+        policies = [
+            WireGuardClientPolicy.from_cloud(row) for row in rows if str(row.get("type")) == "0"
+        ]
+        if len({policy.uuid for policy in policies}) != len(policies):
+            raise ValueError("Cloud returned duplicate WireGuard policy identities.")
+        return policies
 
     def get_wireguard_secret_key(self, serial_number: str) -> dict[str, Any]:
         """Return the gateway-generated WireGuard key envelope."""
