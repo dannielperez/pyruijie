@@ -242,7 +242,7 @@ class GatewayPort(BaseModel):
 
     @property
     def is_up(self) -> bool:
-        return self.line_status.lower() in ("up", "1")
+        return self.line_status.strip().lower() in ("up", "1", "true")
 
 
 class SwitchPort(BaseModel):

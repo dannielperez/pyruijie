@@ -358,3 +358,14 @@ python -m pyruijie update-endpoint --from-file targets.json \
 ## License
 
 This project is licensed under the [Apache License 2.0](LICENSE).
+
+### Read-only WAN evidence
+
+`pyruijie.wan_evidence.read_wan_configuration(client, expected_serial,
+deadline_seconds=12)` requires an authenticated gateway whose serial matches the
+managed device. It reads only `network` and `mllb` configuration and returns an
+allowlisted interface count and policy summary, never PPPoE credentials. Missing
+or inconsistent interface inventory raises an error; unknown enable flags remain
+unknown. `boolean(value)` preserves unknown Cloud link states, including explicit
+`true` / `false` responses. Configuration does not establish current forwarding,
+provider diversity, link health, or successful failover. Cloud state can be cached.
