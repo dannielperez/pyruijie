@@ -369,3 +369,20 @@ or inconsistent interface inventory raises an error; unknown enable flags remain
 unknown. `boolean(value)` preserves unknown Cloud link states, including explicit
 `true` / `false` responses. Configuration does not establish current forwarding,
 provider diversity, link health, or successful failover. Cloud state can be cached.
+
+## Site policy troubleshooting
+
+`pyruijie.site_control.SiteControl` reads cloud application policies plus direct
+gateway application-policy, access-control, ARP and route evidence. `make_plan`
+prepares an application-list-only exception with an immutable policy revision;
+`apply` refuses cloud drift and native disagreement before writing, then reports
+cloud and gateway verification separately. Callers must persist plans and outcomes
+and must not replay uncertain writes. `before_write` allows a final authorization
+check; `on_verifying` reports the readback phase. Cloud writes require a separately
+configured `RuijieWebSession`; direct gateway reads verify the expected serial.
+
+`ClientDevice` exposes nullable `up_rate`, `down_rate`, `update_time` and
+`linked_port`. `traffic_record` preserves unverified vendor units, while
+`compare_traffic` refuses cached, missing, stale and pre-change samples. It compares
+snapshot rates, not byte consumption or application recovery. Port-to-application
+classification is deliberately not inferred by these APIs.
