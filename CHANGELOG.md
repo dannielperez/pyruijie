@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `RuijieClient` recovers from server-side token expiry. Ruijie Cloud can answer `code 3`
+  ("Login timeout") while the token is still inside the local TTL; the dead token stayed in the
+  process-wide cache, so every request failed until the local TTL ran out (observed on the
+  UniqueOS UAT box 2026-10-13 as a ~40 minute fleet-wide health gap roughly every 45 minutes).
+  The client now drops the token from both caches on that code and retries an idempotent `GET`
+  exactly once with a fresh token. Writes are never replayed; they raise and the next call
+  re-authenticates.
 - `RuijieClient.get_fleet_devices` survives the 2026-09-04 Ruijie Cloud hierarchy change:
   the group-tree envelope now carries `rootGroupId`, the root's own `groupId` is empty, and
   the device-list endpoint answers `{code, msg, totalCount: 0}` with no `deviceList` key for
