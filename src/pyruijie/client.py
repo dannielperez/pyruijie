@@ -33,6 +33,11 @@ _EXPIRY_BUFFER_SECONDS = 60
 # re-auth storm. Override with the ``token_ttl`` constructor argument or the
 # ``RUIJIE_TOKEN_TTL_SECONDS`` environment variable.
 _DEFAULT_TOKEN_TTL_SECONDS = 1800.0
+# Business codes meaning the server already expired the access token, even
+# though it is still inside the local TTL ("Login timeout", observed on UAT
+# 2026-10-13). The token is dropped from both caches; idempotent reads retry
+# once with a fresh token, writes are never replayed.
+_TOKEN_EXPIRED_CODES = frozenset({3})
 _DEFAULT_LIST_DEADLINE_SECONDS = 360.0
 _DEFAULT_FLEET_MAX_PAGES = 100
 _MAX_LEGACY_PAGES = 100
@@ -279,7 +284,33 @@ class RuijieClient:
             kwargs["timeout"] = self._request_timeout_for_deadline(deadline)
 
         params = kwargs.pop("params", {})
-        params["access_token"] = self._access_token
+        data = self._send(method, path, params, deadline, kwargs)
+        if data.get("code") in _TOKEN_EXPIRED_CODES:
+            # Server-side expiry: never hand the dead token to the next caller.
+            self.invalidate()
+            if method.upper() == "GET":
+                if deadline is None:
+                    self._ensure_auth()
+                else:
+                    self._ensure_auth(timeout=self._request_timeout_for_deadline(deadline))
+                    kwargs["timeout"] = self._request_timeout_for_deadline(deadline)
+                data = self._send(method, path, params, deadline, kwargs)
+                if data.get("code") in _TOKEN_EXPIRED_CODES:
+                    self.invalidate()
+        if data.get("code") != 0:
+            raise APIError(data.get("code", -1), data.get("msg", "Unknown error"))
+        return data
+
+    def _send(
+        self,
+        method: str,
+        path: str,
+        params: dict[str, Any],
+        deadline: float | None,
+        kwargs: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Send one request with the current token; return the JSON envelope."""
+        params = {**params, "access_token": self._access_token}
 
         try:
             resp = self._http.request(method, path, params=params, **kwargs)
@@ -299,8 +330,6 @@ class RuijieClient:
             raise ConnectionError(_sanitize_url(str(exc))) from exc
 
         data: dict[str, Any] = resp.json()
-        if data.get("code") != 0:
-            raise APIError(data.get("code", -1), data.get("msg", "Unknown error"))
         return data
 
     def _get(

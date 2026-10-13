@@ -171,6 +171,74 @@ class TestAuthenticate:
         assert client.is_authenticated
 
 
+class TestServerSideTokenExpiry:
+    """Ruijie Cloud can expire a token before the local TTL (``code 3``,
+    "Login timeout"). Observed on UAT 2026-10-13: the dead token stayed in the
+    process-wide cache, so every fleet poll failed until the local TTL ran out
+    and the consumer saw a ~40 minute fleet-wide outage."""
+
+    _AUTH = "/service/api/oauth20/client/access_token"
+    _TREE = "/service/api/group/single/tree"
+
+    def test_read_reauthenticates_once_and_succeeds(self, mock_api):
+        auth = mock_api.post(self._AUTH).mock(
+            side_effect=[
+                httpx.Response(200, json={"code": 0, "accessToken": "stale"}),
+                httpx.Response(200, json={"code": 0, "accessToken": "fresh"}),
+            ]
+        )
+        tree = mock_api.get(self._TREE).mock(
+            side_effect=[
+                httpx.Response(200, json={"code": 3, "msg": "Login timeout"}),
+                httpx.Response(200, json={"code": 0, "groups": {}}),
+            ]
+        )
+        client = RuijieClient(app_id="a", app_secret="s")
+
+        assert client.get_projects() == []
+        assert auth.call_count == 2
+        assert tree.call_count == 2
+        assert tree.calls[1].request.url.params["access_token"] == "fresh"
+        assert next(iter(_TOKEN_CACHE.values()))[0] == "fresh"
+
+    def test_read_retries_only_once(self, mock_api):
+        auth = mock_api.post(self._AUTH).respond(json={"code": 0, "accessToken": "tok"})
+        tree = mock_api.get(self._TREE).respond(json={"code": 3, "msg": "Login timeout"})
+        client = RuijieClient(app_id="a", app_secret="s")
+
+        with pytest.raises(APIError) as exc_info:
+            client.get_projects()
+
+        assert exc_info.value.code == 3
+        assert auth.call_count == 2
+        assert tree.call_count == 2
+        # The dead token must not be served to the next caller from the cache.
+        assert _TOKEN_CACHE == {}
+
+    def test_write_is_not_replayed_but_token_is_dropped(self, authed_client):
+        client, mock_api = authed_client
+        policy = mock_api.post("/service/api/vpn/policy").respond(
+            json={"code": 3, "msg": "Login timeout"}
+        )
+
+        with pytest.raises(APIError):
+            client._post("/service/api/vpn/policy", json={})
+
+        assert policy.call_count == 1
+        assert not client.is_authenticated
+        assert _TOKEN_CACHE == {}
+
+    def test_other_api_errors_keep_the_token(self, authed_client):
+        client, mock_api = authed_client
+        tree = mock_api.get(self._TREE).respond(json={"code": 1, "msg": "bad group"})
+
+        with pytest.raises(APIError):
+            client.get_projects()
+
+        assert tree.call_count == 1
+        assert client.is_authenticated
+
+
 # -- get_projects tests --------------------------------------------------------
 
 
