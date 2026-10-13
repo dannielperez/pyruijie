@@ -228,6 +228,18 @@ class TestServerSideTokenExpiry:
         assert not client.is_authenticated
         assert _TOKEN_CACHE == {}
 
+    def test_a_siblings_fresh_token_is_not_dropped(self, mock_api):
+        mock_api.post(self._AUTH).respond(json={"code": 0, "accessToken": "stale"})
+        client = RuijieClient(app_id="a", app_secret="s")
+        client.authenticate()
+        key = next(iter(_TOKEN_CACHE))
+        _TOKEN_CACHE[key] = ("sibling-fresh", _TOKEN_CACHE[key][1])
+
+        client._drop_expired_token("stale")
+
+        assert _TOKEN_CACHE[key][0] == "sibling-fresh"
+        assert not client.is_authenticated
+
     def test_other_api_errors_keep_the_token(self, authed_client):
         client, mock_api = authed_client
         tree = mock_api.get(self._TREE).respond(json={"code": 1, "msg": "bad group"})
