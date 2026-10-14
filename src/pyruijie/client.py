@@ -7,6 +7,8 @@ import math
 import os
 import threading
 import time
+from copy import deepcopy
+from ipaddress import ip_network
 from typing import Any
 
 import httpx
@@ -834,6 +836,45 @@ class RuijieClient:
         if len({policy.uuid for policy in policies}) != len(policies):
             raise ValueError("Cloud returned duplicate WireGuard policy identities.")
         return policies
+
+    def update_existing_wireguard_client_routes(
+        self,
+        project_id: str | int,
+        serial_number: str,
+        expected: WireGuardClientPolicy,
+        allowed_ips: list[str],
+    ) -> None:
+        """Change only routes on an identity-checked existing cloud client.
+
+        Preserve the full vendor payload, including keys, port, DNS and unknown
+        fields. Refuse stale snapshots instead of overwriting concurrent changes.
+        The caller must read back the queued change before reporting success.
+        """
+        routes = sorted({str(ip_network(route, strict=True)) for route in allowed_ips})
+        if not routes:
+            raise ValueError("Client routes cannot be empty.")
+        policies = self.get_existing_wireguard_clients(project_id, serial_number)
+        matching = [p for p in policies if p.uuid == expected.uuid]
+        if len(matching) != 1 or matching[0].to_gateway() != expected.to_gateway():
+            raise ValueError("WireGuard client changed; refresh before updating routes.")
+        response = self.get_wireguard_vpn_info(project_id)
+        rows = (response.get("data") or {}).get("wireguard")
+        if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+            raise ValueError("Invalid cloud WireGuard policy list.")
+        matching_rows = [row for row in rows if row.get("uuid") == expected.uuid]
+        if len(matching_rows) != 1:
+            raise ValueError("WireGuard client identity is ambiguous.")
+        raw = matching_rows[0]
+        if WireGuardClientPolicy.from_cloud(raw).to_gateway() != expected.to_gateway():
+            raise ValueError("WireGuard client changed; refresh before updating routes.")
+        private_key = raw.get("localPrivateKey")
+        if not isinstance(private_key, str) or not private_key or "*" in private_key:
+            raise ValueError("Complete existing client key material is required.")
+        if set(raw["allowIps"]) == set(routes):
+            return
+        payload = deepcopy(raw)
+        payload["allowIps"] = routes
+        self.update_wireguard_policy(serial_number, payload)
 
     def get_wireguard_secret_key(self, serial_number: str) -> dict[str, Any]:
         """Return the gateway-generated WireGuard key envelope."""
