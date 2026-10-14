@@ -360,6 +360,11 @@ class WireGuardPeer:
 
     def to_gateway(self) -> dict:
         return {
+            # Existing gateway-generated peers may carry a private key used
+            # for client configuration export. Preserve it on full-policy
+            # replacement, without exposing it in repr/to_dict or inventing
+            # one for externally keyed peers.
+            **({"peerPrikey": self.raw["peerPrikey"]} if "peerPrikey" in self.raw else {}),
             "uuid": self.uuid or _uuid.uuid4().hex,
             "desc": self.desc,
             "ipaddr": self.ipaddr,
@@ -410,6 +415,23 @@ class WireGuardServerPolicy:
 
     def to_gateway(self) -> dict:
         return {
+            # Firmware configuration fields omitted by the typed surface
+            # must survive peer-only edits. Deliberately do not forward
+            # arbitrary raw/status fields.
+            **{
+                key: self.raw[key]
+                for key in (
+                    "endpointPort",
+                    "keepalive",
+                    "localDomain",
+                    "localIfname",
+                    "metric",
+                    "priority",
+                    "strictPriority",
+                    "suppCustRt",
+                )
+                if key in self.raw
+            },
             "uuid": self.uuid,
             "enable": "1" if self.enabled else "0",
             "type": "1",
