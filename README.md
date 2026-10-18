@@ -386,3 +386,16 @@ configured `RuijieWebSession`; direct gateway reads verify the expected serial.
 `compare_traffic` refuses cached, missing, stale and pre-change samples. It compares
 snapshot rates, not byte consumption or application recovery. Port-to-application
 classification is deliberately not inferred by these APIs.
+
+### Endpoint path evidence
+
+`pyruijie.intercom_diagnostics.inspect_intercom_path(gateway, source, destination)`
+accepts IP literals and an already authenticated local gateway client. Five
+read-only sections share a 35-second deadline, with at most five seconds per call.
+The report includes matching policy routes, VPN candidates, normalized SIP ALG,
+matching flow rows and the last 24 hours of WAN link transitions. Unsupported or
+failed sections are listed in `errors`. Private keys and unrelated logs are omitted.
+
+`route_basis="configured_only"` is deliberate: policy configuration and a flow row
+do not establish the selected kernel route, VPN peer or reverse route. Obtain
+fresh packet/route evidence separately when proving the path a packet used.
