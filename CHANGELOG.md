@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `intercom_diagnostics.inspect_intercom_path` collects bounded read-only policy-route, WireGuard candidate, SIP ALG, matching flow and WAN transition evidence for an exact endpoint/registrar pair.
+- Reports explicitly label configuration evidence, preserve unavailable sections as unknown, and omit private keys, unrelated flow entries and raw log text.
+
+
 ### Fixed
 
 - `RuijieClient` recovers from server-side token expiry. Ruijie Cloud can answer `code 3`
